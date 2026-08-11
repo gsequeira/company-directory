@@ -30,9 +30,9 @@ components:
           type: string
           description: The name of the department
           example: "Administration"
-        required:
-          - id
-          - name
+      required:
+        - id
+        - name
     PageOfDepartments:
       description: A single page of departments
       properties:
@@ -41,4 +41,4 @@ components:
           items:
             $ref: "#/components/schemas/Department"
       required:
-        -departments
+        - departments

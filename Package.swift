@@ -9,6 +9,9 @@ let package = Package(
         .package(url: "https://github.com/vapor/vapor.git", from: "4.121.4"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.11.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
+        .package(url: "https://github.com/apple/swift-openapi-generator.git", from: "1.13.0"),
+        .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.0"),
+        .package(url: "https://github.com/vapor/swift-openapi-vapor.git", from: "1.1.0"),
     ],
     targets: [
         .executableTarget(
@@ -17,6 +20,11 @@ let package = Package(
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "OpenAPIVapor", package: "swift-openapi-vapor"),
+            ],
+            plugins: [
+                .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator")
             ]
         ),
         .testTarget(

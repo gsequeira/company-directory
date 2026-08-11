@@ -3,6 +3,9 @@ import ServiceLifecycle
 import OpenAPIVapor
 
 func configureServer(_ application: Application) async throws -> Service {
+    // Configure the database
+    try await configureDatabase(application: application)
+
     routes(application)
 
     // Create API handler for request processing

@@ -24,7 +24,7 @@ func configureDatabase(application: Application) async throws {
 
         // Add migrations
         application.migrations.add([
-
+            Migrations.CreatePolls()
         ])
 
         // Run migrations automatically

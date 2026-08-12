@@ -18,6 +18,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PageOfDepartments"
+    post:
+      summary: Create a new department
+      operationId: createDepartment
+      tags:
+        - Departments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentRequest"
+      responses:
+        "201":
+          description: The department was created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+        "401":
+          description: Unauthorized
+        "409":
+          description: Conflict - A department with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictError"
 components:
   schemas:
     Department:
@@ -42,3 +68,23 @@ components:
             $ref: "#/components/schemas/Department"
       required:
         - departments
+    CreateDepartmentRequest:
+      description: The request data required to create a department
+      properties:
+        name:
+          description: The name of the department
+          type: string
+      required:
+        - name
+    ConflictError:
+      description: Error response for conflicts
+      properties:
+        error:
+          type: boolean
+          example: true
+        reason:
+          type: string
+          example: "A department with the name 'Human Resources' already exists"
+      required:
+        - error
+        - reason

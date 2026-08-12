@@ -28,13 +28,6 @@ struct APIHandler: APIProtocol {
             throw error
         }
     }
-    // func listDepartments(_ input: Operations.ListDepartments.Input) async throws -> Operations.ListDepartments.Output {
-    //     // Create an empty list of departments for now
-    //     let emptyDepartments: [Components.Schemas.Department] = []
-    //     let pageOfDepartments = Components.Schemas.PageOfDepartments(departments: emptyDepartments)
-
-    //     return .ok(.init(body: .json(pageOfDepartments)))
-    // }
 
     func createDepartment(_ input: Operations.CreateDepartment.Input) async throws -> Operations.CreateDepartment.Output {
         do {
@@ -73,10 +66,24 @@ struct APIHandler: APIProtocol {
         }
     }
 
-    // func getDepartmentDetail(_ input: Operations.GetDepartmentDetail.Input) async throws -> Operations.GetDepartmentDetail.Output {
-    //     return .notFound(.init())
-    // }
-    // func createDepartment(_ input: Operations.CreateDepartment.Input) async throws -> Operations.CreateDepartment.Output {
-    //     .undocumented(statusCode: 500, UndocumentedPayload())
-    // }
+    func getDepartmentDetail(_ input: Operations.GetDepartmentDetail.Input) async throws -> Operations.GetDepartmentDetail.Output {
+        do {
+             let departmentId = input.path.departmentId
+
+             // Find the department by ID in the database
+             guard let department = try await Models.Department.find(Int32(departmentId), on: database) else {
+                return .notFound(.init())
+             }
+
+             // Convert database model to API response format
+             let departmentResponse = Components.Schemas.Department(
+                id: Int(department.id!),
+                name: department.name
+            )
+
+            return .ok(.init(body: .json(departmentResponse)))
+        } catch {
+            throw error
+        }
+    }
 }

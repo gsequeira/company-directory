@@ -8,9 +8,10 @@ servers:
 paths:
   /departments:
     get:
-      summary: List departments
-      description: Returns all the departments from the database
+      summary: Fetch a list of departments
       operationId: listDepartments
+      tags:
+        - Departments
       responses:
         "200":
           description: Returns the list of departments
@@ -44,7 +45,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictError"
+  /departments/{departmentId}:
+    parameters:
+      - $ref: "#/components/parameters/path.departmentId"
+    get:
+      summary: Fetch the details of a department
+      operationId: getDepartmentDetail
+      tags:
+        - Departments
+      responses:
+        "200":
+          description: A successfull response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+        "404":
+          description: A department with this id was not found
 components:
+  parameters:
+    path.departmentId:
+      name: departmentId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int
   schemas:
     Department:
       description: A department
@@ -55,7 +81,7 @@ components:
         name:
           type: string
           description: The name of the department
-          example: "Administration"
+          example: "Customer Support"
       required:
         - id
         - name
@@ -84,7 +110,7 @@ components:
           example: true
         reason:
           type: string
-          example: "A department with the name 'Human Resources' already exists"
+          example: "A department with the name 'Customer Support' already exists"
       required:
         - error
         - reason

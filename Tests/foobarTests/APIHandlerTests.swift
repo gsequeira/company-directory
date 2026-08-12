@@ -88,4 +88,34 @@ struct APIHandlerIntegrationTests {
             #expect(names.contains("Sales"))
         }
     }
+
+    @Test("GET /api/departments/{departmentId} returns specific department when it exists")
+    func testGetDepartmentDetailSuccess() async throws {
+        try await TestHelpers.withApplication { application in
+            let createRequest = Components.Schemas.CreateDepartmentRequest(name: "Information Technology")
+
+            // Create a department first
+            let createResponse = try await application.sendRequest(.POST, "/api/departments", body: createRequest)
+            let createdDepartment = try createResponse.content.decode(Components.Schemas.Department.self)
+
+            // Fetch the created department by ID
+            let response = try await application.sendRequest(.GET, "/api/departments/\(createdDepartment.id)")
+
+            #expect(response.status == .ok)
+            #expect(response.headers.contentType == .json)
+
+            let fetchedDepartment = try response.content.decode(Components.Schemas.Department.self)
+            #expect(fetchedDepartment.id == createdDepartment.id)
+            #expect(fetchedDepartment.name == "Information Technology")
+        }
+    }
+
+    @Test("GET /api/departments/{departmentId} returns not found for non-existent department")
+    func testGetDepartmentDetailNotFound() async throws {
+        try await TestHelpers.withApplication { application in
+            // Request a department that doesn't exist
+            let response = try await application.sendRequest(.GET, "/api/departments/999")
+            #expect(response.status == .notFound)
+        }
+    }
 }

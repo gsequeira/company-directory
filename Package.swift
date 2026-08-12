@@ -33,7 +33,10 @@ let package = Package(
         ),
         .testTarget(
             name: "foobarTests",
-            dependencies: ["foobar"]
+            dependencies: [
+                "foobar",
+                .product(name: "VaporTesting", package: "vapor")
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

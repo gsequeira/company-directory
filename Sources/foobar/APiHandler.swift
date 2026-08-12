@@ -22,9 +22,22 @@ struct APIHandler: APIProtocol {
         do {
             switch input.body {
             case .json(let createRequest):
+                // Check for existing department with the same name
+                if try await Models.Department.query(on: database)
+                    .filter(\.$name == createRequest.name)
+                    .first() != nil
+                {
+                    let conflictResponse = Components.Schemas.ConflictError(
+                        error: true,
+                        reason: "A department with the name '\(createRequest.name) already exists"
+                    )
+                    return .conflict(.init(body: .json(conflictResponse)))
+                }
+
                 // Create new department model
                 let newDepartment = Models.Department()
                 newDepartment.name = createRequest.name
+                newDepartment.updatedAt = Date()
 
                 // Save to database
                 try await newDepartment.save(on: database)

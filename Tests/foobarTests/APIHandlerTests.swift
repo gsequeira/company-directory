@@ -50,4 +50,42 @@ struct APIHandlerIntegrationTests {
             #expect(conflictError.reason.contains("Duplicate Department"))
         }
     }
+
+    @Test("GET /api/departments returns empty list when no departments exist")
+    func testListDepartmentsEmpty() async throws {
+        try await TestHelpers.withApplication { application in
+            let response = try await application.sendRequest(.GET, "/api/departments")
+
+            #expect(response.status == .ok)
+            #expect(response.headers.contentType == .json)
+
+            let pageOfDepartments = try response.content.decode(Components.Schemas.PageOfDepartments.self)
+            #expect(pageOfDepartments.departments.isEmpty)
+        }
+    }
+
+    @Test("GET /api/departments returns list of departments when departments exist")
+    func testListDepartmentsWithData() async throws {
+        try await TestHelpers.withApplication { application in
+            let department1 = Components.Schemas.CreateDepartmentRequest(name: "Engineering")
+            let department2 = Components.Schemas.CreateDepartmentRequest(name: "Sales")
+
+            // Create two departments
+            _ = try await application.sendRequest(.POST, "/api/departments", body: department1)
+            _ = try await application.sendRequest(.POST, "/api/departments", body: department2)
+
+            // List departments
+            let response = try await application.sendRequest(.GET, "/api/departments")
+
+            #expect(response.status == .ok)
+            #expect(response.headers.contentType == .json)
+
+            let pageOfDepartments = try response.content.decode(Components.Schemas.PageOfDepartments.self)
+            #expect(pageOfDepartments.departments.count == 2)
+
+            let names = pageOfDepartments.departments.map { $0.name }
+            #expect(names.contains("Engineering"))
+            #expect(names.contains("Sales"))
+        }
+    }
 }

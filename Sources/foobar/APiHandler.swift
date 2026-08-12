@@ -11,12 +11,30 @@ struct APIHandler: APIProtocol {
     }
 
     func listDepartments(_ input: Operations.ListDepartments.Input) async throws -> Operations.ListDepartments.Output {
-        // Create an empty list of departments for now
-        let emptyDepartments: [Components.Schemas.Department] = []
-        let pageOfDepartments = Components.Schemas.PageOfDepartments(departments: emptyDepartments)
+        do {
+            // Query all departmentsfrom the database
+            let departments = try await Models.Department.query(on: database).all()
 
-        return .ok(.init(body: .json(pageOfDepartments)))
+            // Convert database models to API response format
+            let departmentComponents = departments.map { department in
+                Components.Schemas.Department(id: Int(department.id!), name: department.name)
+            }
+
+            // Create paginated response
+            let pageOfDepartments = Components.Schemas.PageOfDepartments(departments: departmentComponents)
+
+            return .ok(.init(body: .json(pageOfDepartments)))
+        } catch {
+            throw error
+        }
     }
+    // func listDepartments(_ input: Operations.ListDepartments.Input) async throws -> Operations.ListDepartments.Output {
+    //     // Create an empty list of departments for now
+    //     let emptyDepartments: [Components.Schemas.Department] = []
+    //     let pageOfDepartments = Components.Schemas.PageOfDepartments(departments: emptyDepartments)
+
+    //     return .ok(.init(body: .json(pageOfDepartments)))
+    // }
 
     func createDepartment(_ input: Operations.CreateDepartment.Input) async throws -> Operations.CreateDepartment.Output {
         do {

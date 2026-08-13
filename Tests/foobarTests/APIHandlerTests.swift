@@ -118,4 +118,76 @@ struct APIHandlerIntegrationTests {
             #expect(response.status == .notFound)
         }
     }
+
+    @Test("PATCH /api/departments/{departmentId} updates exisitng department successfully")
+    func testUpdateDepartmentSuccess() async throws {
+        try await TestHelpers.withApplication { application in
+            // Create a department
+            let createRequest = Components.Schemas.CreateDepartmentRequest(name: "Customer Support")
+            let createResponse = try await application.sendRequest(.POST, "/api/departments", body: createRequest)
+            let createDepartment = try createResponse.content.decode(Components.Schemas.Department.self)
+
+            // Update the department
+            let updateRequest = Components.Schemas.UpdateDepartmentRequest(name: "Customer Service")
+            let updatedResponse = try await application.sendRequest(.PATCH, "/api/departments/\(createDepartment.id)",
+                body: updateRequest)
+
+            #expect(updatedResponse.status == .ok)
+            #expect(updatedResponse.headers.contentType == .json)
+
+            let updatedDepartment = try updatedResponse.content.decode(Components.Schemas.Department.self)
+            #expect(updatedDepartment.id == createDepartment.id)
+            #expect(updatedDepartment.name == "Customer Service")
+        }
+    }
+
+    @Test("DELETE /api/departments/{departmentId} deletes existing department successfully")
+    func testDeleteDepartmentSuccess() async throws {
+        try await TestHelpers.withApplication { application in
+            // Create a department first
+            let createRequest = Components.Schemas.CreateDepartmentRequest(name: "Customer Service")
+            let createResponse = try await application.sendRequest(.POST, "/api/departments", body: createRequest)
+            let createDepartment = try createResponse.content.decode(Components.Schemas.Department.self)
+
+            // Delete the department
+            let deleteResponse = try await application.sendRequest(.DELETE, "/api/departments/\(createDepartment.id)")
+            #expect(deleteResponse.status == .noContent)
+
+            // Verify the department is actually deleted by trying to fetch it
+            let fetchResponse = try await application.sendRequest(.GET, "/api/departments/\(createDepartment.id)")
+            #expect(fetchResponse.status == .notFound)
+        }
+    }
+
+    @Test("DELETE /api/departments/{departmentId} returns not found for non-existent department")
+    func testDeleteDepartmentNotFound() async throws {
+        try await TestHelpers.withApplication { application in
+            // Attempt to delete a department that doesn't exist
+            let response = try await application.sendRequest(.DELETE, "/api/departments.999")
+            #expect(response.status == .notFound)
+        }
+    }
+
+    @Test("DELETE /api/departments/{departmentId} removes a department from the list")
+    func testDeleteDepartmentRemovesFromList() async throws {
+        try await TestHelpers.withApplication { application in
+            // Create two departments
+            let department1 = Components.Schemas.CreateDepartmentRequest(name: "Engineering")
+            let department2 = Components.Schemas.CreateDepartmentRequest(name: "Customer Support")
+
+            let response1 = try await application.sendRequest(.POST, "/api/departments", body: department1)
+            let response2 = try await application.sendRequest(.POST, "/api/departments", body: department2)
+
+            let createDepartment2 = try response2.content.decode(Components.Schemas.Department.self)
+
+            // Delete the second department
+            _ = try await application.sendRequest(.DELETE, "/api/departments/\(createDepartment2.id)")
+
+            // Verify only one department remains in the list
+            let listResponse = try await application.sendRequest(.GET, "/api/departments")
+            let pageOfDepartments = try listResponse.content.decode(Components.Schemas.PageOfDepartments.self)
+            #expect(pageOfDepartments.departments.count == 1)
+            #expect(pageOfDepartments.departments.first?.name == "Engineering")
+        }
+    }
 }

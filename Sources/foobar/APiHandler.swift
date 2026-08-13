@@ -86,4 +86,64 @@ struct APIHandler: APIProtocol {
             throw error
         }
     }
+
+    func updateDepartment(_ input: Operations.UpdateDepartment.Input) async throws -> Operations.UpdateDepartment.Output {
+        do {
+            let departmentId = input.path.departmentId
+
+            switch input.body {
+            case .json(let updateRequest):
+                // Find the existing department
+                guard let existingDepartment = try await Models.Department.find(Int32(departmentId), on: database) else {
+                    return .notFound(.init())
+                }
+
+                // Check if another department already has this name (excluding current department)
+                if try await Models.Department.query(on: database)
+                    .filter(\.$name == updateRequest.name)
+                    .filter(\.$id != existingDepartment.id!)
+                    .first() != nil
+                {
+                    let conflictResponse = Components.Schemas.ConflictError(
+                        error: true,
+                        reason: "A department with the name '\(updateRequest.name)' already exists"
+                    )
+                    return .conflict(.init(body: .json(conflictResponse)))
+                }
+
+                // Update the department
+                existingDepartment.name = updateRequest.name
+
+                try await existingDepartment.save(on: database)
+
+                // Convert to API response format
+                let departmentResponse = Components.Schemas.Department(
+                    id: Int(existingDepartment.id!),
+                    name: existingDepartment.name
+                )
+
+                return .ok(.init(body: .json(departmentResponse)))
+            }
+        } catch {
+            throw error
+        }
+    }
+
+    func deleteDepartment(_ input: Operations.DeleteDepartment.Input) async throws -> Operations.DeleteDepartment.Output {
+        do {
+            let departmentid = input.path.departmentId
+
+            // Find the existing department
+            guard let existingDepartment = try await Models.Department.find(Int32(departmentid), on: database) else {
+                return .notFound(.init())
+            }
+
+            // Delete the department from the database
+            try await existingDepartment.delete(on: database)
+
+            return .noContent(.init())
+        } catch {
+            throw error
+        }
+    }
 }

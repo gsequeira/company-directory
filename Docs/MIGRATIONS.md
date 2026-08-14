@@ -200,6 +200,50 @@ what you meant. Reading the schema back, and provoking the constraint, is what c
 
 ---
 
+# Indexes are a design decision, not a detail
+
+A unique constraint is also an index, and its **column order determines which queries can use it**.
+
+`AddEmployeeNameUniqueness` created this:
+
+```
+"uq:employees.first_name+employees.last_name" UNIQUE CONSTRAINT, btree (first_name, last_name)
+```
+
+A B-tree composite index serves queries on a **leftmost prefix** of its columns. So that index
+covers:
+
+| Query | Uses the index? |
+| --- | --- |
+| `WHERE first_name = ?` | Yes — leftmost prefix |
+| `WHERE first_name = ? AND last_name = ?` | Yes — the whole key |
+| `WHERE last_name = ?` | **No** — sequential scan |
+
+Which matters sooner than it sounds: "find people by surname" is the obvious first feature of a
+directory search, and the index that already exists does not help it. The fix is a second index on
+`last_name`, not a reordering — reordering would just move the problem to first-name lookups.
+
+So the order in `unique(on: "first_name", "last_name")` is a choice about which queries get to be
+fast, and it was made implicitly. Worth revisiting when the filtering work starts.
+
+**Verify with `EXPLAIN ANALYZE`, and mind the trap:**
+
+```sql
+EXPLAIN ANALYZE SELECT * FROM employees WHERE last_name = 'Doe';
+```
+
+On a two-row table PostgreSQL will choose a sequential scan **whichever indexes exist**, because
+reading two rows is cheaper than consulting an index to read two rows. The planner is right, and it
+means index experiments are meaningless without realistic row counts. `generate_series` is the
+usual way to make some:
+
+```sql
+INSERT INTO employees (first_name, last_name, inserted_at, updated_at)
+SELECT 'First' || i, 'Last' || i, now(), now() FROM generate_series(1, 100000) AS i;
+```
+
+Do that against the **test** database, or be ready to `docker compose down -v`.
+
 # Batches
 
 The `batch` column is the unit of `revert`, not the individual migration. Everything applied by one

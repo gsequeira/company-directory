@@ -110,6 +110,31 @@ Middleware can answer the first question. The second has to be answered inside t
 it depends on the data being fetched. Getting this wrong is how systems leak other customers'
 orders.
 
+### 6. Caching, and knowing when not to
+
+A product catalogue is read thousands of times per write. A directory of two departments is not.
+Reaching for Redis here would be strictly worse than not: a network hop, a serialisation format, an
+eviction policy and an entirely new failure mode, all to make a sub-millisecond query slower.
+
+**The question that decides it is read/write ratio plus staleness tolerance.** Ten thousand reads
+per write, and thirty-second-old prices are acceptable? That is the textbook case. A handful of
+reads per write, or data that must be correct the instant it changes? A cache buys nothing and
+costs a lot.
+
+**The hard part is invalidation, not storage.** Putting a value in Redis is trivial. Knowing the
+moment a cached value became wrong — because something updated the underlying row through a path
+you forgot about — is genuinely difficult, and it is why the standard advice is to reach for a
+cache last rather than first.
+
+**Cheaper wins come first**, and both are already relevant to this project: an index that turns a
+sequential scan into a lookup, and eager loading that turns N+1 queries into two. Neither adds a
+component to the system. See the index notes in [`MIGRATIONS.md`](MIGRATIONS.md) and the N+1
+section in [`FLUENT.md`](FLUENT.md).
+
+**Why CRUD does not teach it:** nothing here is read often enough for the difference to be
+measurable, so a cache added now would be indistinguishable from one that does nothing. Vapor
+integrates RediStack when the time comes; the plumbing was never the difficult part.
+
 ---
 
 ## Two changes worth making now

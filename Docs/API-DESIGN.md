@@ -224,6 +224,12 @@ Two things worth knowing:
 - `@Children` is *not* a stored property. It has no column and no migration. Reading it requires
   an explicit `.with(\.$employees)` or `.query(on:)`, otherwise accessing it traps.
 
+**Watch for N+1 the moment this lands.** If `listEmployees` starts returning a department name,
+`employee.department.name` issues one query *per employee* — it reads like a property access
+because it is one. `.with(\.$department)` collapses that to two queries total. See
+[`FLUENT.md`](FLUENT.md) → *The N+1 problem*, including how to detect it by counting queries per
+request rather than by how fast it feels at these row counts.
+
 ## 2.3 Migration
 
 ```swift

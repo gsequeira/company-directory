@@ -133,6 +133,48 @@ At that point the choice is:
 None is free. The comment in `APIHandler` names the hazard so it is not discovered by a confused
 user.
 
+## The N+1 problem, which Phase 2 walks straight into
+
+An ORM makes the expensive thing look identical to the cheap thing at the call site. That is its
+main convenience and its main hazard.
+
+Once `@Parent` exists, this looks harmless:
+
+```swift
+let employees = try await Models.Employee.query(on: database).all()
+let response = employees.map { employee in
+    Components.Schemas.Employee(
+        // ...
+        departmentName: employee.department.name   // ← a database round trip, per employee
+    )
+}
+```
+
+One query for the employees, then **one more per employee** for their department. Twenty employees,
+twenty-one queries. Nothing in the syntax suggests it — `employee.department.name` reads like a
+property access, because it is one.
+
+Fluent's answer is eager loading:
+
+```swift
+let employees = try await Models.Employee.query(on: database)
+    .with(\.$department)
+    .all()
+```
+
+Two queries total, regardless of row count. `.with(\.$employees)` does the same from the
+`@Children` side.
+
+Fluent partly protects you here: accessing an un-eager-loaded relation **traps** rather than
+silently issuing a query, which turns a performance bug into a crash you cannot miss. Do not rely
+on that as the whole defence — the `$department.id` shortcut is always available without loading,
+so the trap only fires when the full model is touched.
+
+**How to catch it:** count the queries for a single request. Vapor can log SQL, and the number
+should be constant as the result set grows. If query count scales with rows returned, that is N+1
+regardless of how fast it currently feels — this project's tables are small enough that twenty-one
+queries and two are indistinguishable by eye.
+
 ## Reading the source is the fastest way
 
 Everything above was established by reading `.build/checkouts`, not documentation. That directory

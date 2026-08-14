@@ -5,7 +5,8 @@ Conventions for the tests in `Tests/foobarTests/`. The suite is integration-styl
 over HTTP with `application.sendRequest`, and asserts on the response.
 
 This document covers *how* to write an assertion. For *what* is currently covered and what is
-missing, see [`API-COVERAGE.md`](API-COVERAGE.md); for specific defects found and fixed, see
+missing, see [`API-COVERAGE.md`](API-COVERAGE.md); for the intended API shape and roadmap, see
+[`API-DESIGN.md`](API-DESIGN.md); for specific defects found and fixed, see
 [`ISSUES.md`](ISSUES.md).
 
 ## The governing principle

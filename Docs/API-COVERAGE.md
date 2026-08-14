@@ -10,6 +10,11 @@ This is a status document and goes out of date as tests are added — unlike
 [`ISSUES.md`](ISSUES.md), which records specific defects. Re-check the tables below before
 trusting them.
 
+**Scope:** this audits how well the *existing* surface is tested. It does not assess whether that
+surface is the right one — the employee resource is deliberately incomplete and the two entities
+are not yet related. See [`API-DESIGN.md`](API-DESIGN.md) for the intended shape and the planned
+sequencing, which puts most of the work below *after* the design phases.
+
 ## Summary
 
 Every operation in the spec has at least one test, so there are no completely unexercised

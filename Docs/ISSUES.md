@@ -1,8 +1,9 @@
 # Known issues in the test suite
 
-Defects found in `Tests/foobarTests/APIHandlerTests.swift`, with their fixes. Both original issues are now resolved;
-one has a residual hardening step still open. See [`TESTING.md`](TESTING.md) for the conventions
-these fixes follow.
+Defects found in `Tests/foobarTests/APIHandlerTests.swift`, with their fixes. All issues recorded
+here are resolved; the file is kept as a record of what went wrong and why the guards against
+recurrence look the way they do. See [`TESTING.md`](TESTING.md) for the conventions these fixes
+follow.
 
 Scope note: this covers the test suite only. It is not a project-wide issue list, and does not
 track defects in `Sources/foobar`.
@@ -10,7 +11,7 @@ track defects in `Sources/foobar`.
 | # | Location | Issue | Status |
 | --- | --- | --- | --- |
 | 1 | `testCreateEmployeeDuplicateName` | Assertion checked wording the handler never produced | **Resolved** |
-| 2 | `testDeleteDepartmentNotFound` | Test passed without reaching the handler | **Resolved**, one hardening step open |
+| 2 | `testDeleteDepartmentNotFound` | Test passed without reaching the handler | **Resolved** |
 
 ---
 
@@ -70,7 +71,7 @@ the two drifting apart:
 
 ## Issue 2 — Delete-not-found test never reached the handler
 
-**Status:** resolved. One hardening step still open.
+**Status:** resolved, with a regression guard in place.
 
 ### What was wrong
 
@@ -101,17 +102,17 @@ let response = try await application.sendRequest(.DELETE, "/api/departments/999"
 The route `/api/departments/{departmentId}` now matches, `deleteDepartment` runs, `find(999)`
 returns nil, and the handler returns `.notFound(.init())`.
 
-### Still open — prove it reaches the handler
+### The regression guard
 
-The test no longer asserts anything that distinguishes the two `404`s:
+Correcting the path fixed the defect but left nothing preventing its return: status alone cannot
+distinguish the two `404`s this application can produce.
 
 | Source | Status | Body |
 | --- | --- | --- |
-| Vapor routing (no route matched) | `404` | `{"error":true,"reason":"Not Found"}` |
+| Vapor routing (no route matched) | `404` | `{"error":true,"reason":"Not Found"}` — 35 bytes |
 | `deleteDepartment` returning `.notFound(.init())` | `404` | *(empty — the spec declares no content for 404)* |
 
-Status alone cannot tell them apart, so a future path typo would silently reintroduce the original
-bug. Adding a body assertion closes that:
+A body assertion pins which of the two is acceptable:
 
 ```swift
 #expect(response.status == .notFound)
@@ -121,11 +122,17 @@ bug. Adding a body assertion closes that:
 `TestingHTTPResponse.body` is a `ByteBuffer`, so `readableBytes` asserts emptiness without
 decoding.
 
-To confirm the test is load-bearing after adding it: make `deleteDepartment` return a different
-status, check the test goes red, then restore the handler.
+This is now in place on both `testDeleteDepartmentNotFound` and `testGetDepartmentDetailNotFound`.
 
-### Related
+### Confirming the guard works
 
-`testGetDepartmentDetailNotFound` uses the correct `/api/departments/999` and does reach the
-handler, but likewise asserts status only. The same `readableBytes` check would strengthen it
-symmetrically.
+Per Step 5 of [`TESTING.md`](TESTING.md), the assertion was checked against the bug it exists to
+catch. Temporarily restoring the period in the path produced:
+
+```
+Expectation failed: (response.body.readableBytes → 35) == 0
+```
+
+The status assertion still passed on its own — only the body check noticed the handler had never
+been entered. That is the failure mode the guard exists for, and it is the reason to keep the
+assertion even though it looks arbitrary next to a passing status check.

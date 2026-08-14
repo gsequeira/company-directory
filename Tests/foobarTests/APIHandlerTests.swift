@@ -116,6 +116,11 @@ struct APIHandlerIntegrationTests {
             // Request a department that doesn't exist
             let response = try await application.sendRequest(.GET, "/api/departments/999")
             #expect(response.status == .notFound)
+
+            // The handler's 404 has an empty body; a routing 404 would carry Vapor's
+            // {"error":true,"reason":"Not Found"}. This is what proves the request
+            // reached getDepartmentDetail rather than falling through the router.
+            #expect(response.body.readableBytes == 0)
         }
     }
 
@@ -165,6 +170,11 @@ struct APIHandlerIntegrationTests {
             // Attempt to delete a department that doesn't exist
             let response = try await application.sendRequest(.DELETE, "/api/departments/999")
             #expect(response.status == .notFound)
+
+            // The handler's 404 has an empty body; a routing 404 would carry Vapor's
+            // {"error":true,"reason":"Not Found"}. This is what proves the request
+            // reached deleteDepartment rather than falling through the router.
+            #expect(response.body.readableBytes == 0)
         }
     }
 

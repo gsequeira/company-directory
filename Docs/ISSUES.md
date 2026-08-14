@@ -1,6 +1,6 @@
-# Known issues in `foobarTests`
+# Known issues in the test suite
 
-Defects found in `APIHandlerTests.swift`, with their fixes. Both original issues are now resolved;
+Defects found in `Tests/foobarTests/APIHandlerTests.swift`, with their fixes. Both original issues are now resolved;
 one has a residual hardening step still open. See [`TESTING.md`](TESTING.md) for the conventions
 these fixes follow.
 

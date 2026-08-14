@@ -1,6 +1,6 @@
 # Writing assertions in this test suite
 
-Conventions for `foobarTests`. The suite is integration-style: every test boots a real
+Conventions for the tests in `Tests/foobarTests/`. The suite is integration-style: every test boots a real
 `Application` with an in-memory SQLite database via `TestHelpers.withApplication`, drives it
 over HTTP with `application.sendRequest`, and asserts on the response.
 
@@ -187,7 +187,7 @@ decoding.
 ## Step 6 — Extract repeated setup into a helper
 
 Once three or more tests repeat the same setup, the per-test judgment call above should be made
-once, in one place. Add the helper to `TestHelpers.swift` next to the existing `sendRequest`
+once, in one place. Add the helper to `Tests/foobarTests/TestHelpers.swift` next to the existing `sendRequest`
 extensions:
 
 ```swift
@@ -207,7 +207,7 @@ extension Application {
 ```
 
 Thread `sourceLocation` through so a setup failure is reported at the **calling test**. Without it,
-every test that fails setup blames the same line inside `TestHelpers.swift`, and the failure list
+every test that fails setup blames the same line inside `Tests/foobarTests/TestHelpers.swift`, and the failure list
 stops telling you which test broke.
 
 ## Checklist

@@ -128,24 +128,28 @@ failure into parsing.
 It now returns the wrong status instead of dying, which is a real improvement — but nothing in the
 suite pins that behaviour, so there is no guard against a regression.
 
-## Constraint violations surface as `500`
+## Constraint violations — fixed, but still untested
 
-Added 2026-08-14, after `Migrations.AddEmployeeNameUniqueness` — see
-[`MIGRATIONS.md`](MIGRATIONS.md).
+Raised and resolved 2026-08-14. Previously, when the duplicate pre-check *lost* a race — two
+concurrent requests both passed it and the database rejected the second insert — the client got a
+`500` rather than the declared `409`. `createDepartment`, `updateDepartment` and `createEmployee`
+now catch the constraint failure and return `409`; see
+[`MIGRATIONS.md`](MIGRATIONS.md) and [`FLUENT.md`](FLUENT.md).
 
-Both create handlers detect duplicates with a pre-check query and return `409`. Both tables now
-also carry a unique constraint. But nothing maps a constraint violation to a response: each handler
-ends in `catch { throw error }`, so when the pre-check is *lost* — two concurrent requests both pass
-it, and the database rejects the second insert — the client gets a `500`, not the `409` the spec
-declares.
+**The suite still does not cover it.** The existing duplicate-name tests exercise the pre-check
+path, which answers before the database is consulted, so they would pass unchanged if the mapping
+were deleted tomorrow. That is a live example of the Step 5 problem in
+[`TESTING.md`](TESTING.md): a branch with no test holding it in place.
 
-This affects `createDepartment` and `createEmployee` equally. It is untested, and awkward to test,
-because provoking the race deliberately is not straightforward. The fix is to catch the violation
-on SQLSTATE `23505` in both handlers, at which point the pre-checks become an optimisation for the
-common case rather than the only thing between a client and a `500`.
+It was verified manually, deterministically, using an uncommitted transaction to force the race —
+the recipe is in [`MIGRATIONS.md`](MIGRATIONS.md). Turning that into an automated test is possible
+but needs a second connection held open inside the test, which is more machinery than the suite has
+today. Worth doing when Phase 2 arrives, because the foreign key changes this code's correctness.
 
-The existing duplicate-name tests do **not** cover this: they exercise the pre-check path, which
-returns `409` before the database is ever asked.
+**Known limitation:** the mapping keys on "any constraint failure", the only vocabulary the
+driver-agnostic API offers. Uniqueness is currently the sole constraint on both tables, so that is
+exact. Once `employees.department_id` has a foreign key, a request naming a nonexistent department
+will be reported as a duplicate name.
 
 ## Smaller gaps
 

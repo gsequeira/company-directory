@@ -218,6 +218,19 @@ handler's `404` has an empty body, Vapor's routing `404` carries
 `TestingHTTPResponse.body` is a `ByteBuffer`, so `readableBytes` asserts emptiness without
 decoding.
 
+### The concurrency version of this trap
+
+Same failure, one level up. Verifying that a race returns `409` rather than `500` by firing 125
+concurrent duplicate requests produced a perfect-looking result — one `201`, the rest `409`, no
+`500`s — and proved nothing. `pg_stat_database.xact_rollback` had not moved, so no insert ever
+reached the database and the pre-check had answered every one. The client's process startup was
+slower than the race window.
+
+**A concurrency test whose requests never actually overlap reports success for the wrong reason.**
+Measure something that proves the code path ran — a rollback counter, a log line, a row that should
+not exist — rather than trusting the status code. The deterministic alternative, forcing the race
+with an uncommitted transaction, is in [`MIGRATIONS.md`](MIGRATIONS.md).
+
 ## Step 6 — Extract repeated setup into a helper
 
 Once three or more tests repeat the same setup, the per-test judgment call above should be made

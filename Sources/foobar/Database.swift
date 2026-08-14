@@ -3,8 +3,12 @@ import FluentPostgresDriver
 import Foundation
 import Vapor
 
-/// Errors surfaced by `configureDatabase(application:)`.
-enum DatabaseError: Error, LocalizedError {
+/// Errors surfaced by `configureDatabase(application:)` — startup failures only, not query errors.
+///
+/// Named `DatabaseSetupError` rather than `DatabaseError` deliberately: FluentKit declares a
+/// `DatabaseError` protocol that drivers conform their own error types to, and a same-named type
+/// here shadows it for every file in this module. See `Docs/FLUENT.md`.
+enum DatabaseSetupError: Error, LocalizedError {
     /// Thrown when `autoMigrate()` fails. Carries the underlying error's description.
     case migrationFailed(String)
     /// Thrown when database setup fails for any other reason.
@@ -51,7 +55,7 @@ private func postgresConfiguration() throws -> DatabaseConfigurationFactory {
 ///   development database. Making this injectable is what stops `autoRevert()` in a test from
 ///   dropping real tables.
 ///
-/// - Throws: `DatabaseError.migrationFailed` or `DatabaseError.configurationFailed`.
+/// - Throws: `DatabaseSetupError.migrationFailed` or `DatabaseSetupError.configurationFailed`.
 func configureDatabase(
     application: Application,
     configuration: DatabaseConfigurationFactory? = nil
@@ -75,9 +79,9 @@ func configureDatabase(
         // as `.configurationFailed`.
         let errorMessage = error.localizedDescription
         if errorMessage.contains("migration") || errorMessage.contains("Migration") {
-            throw DatabaseError.migrationFailed(errorMessage)
+            throw DatabaseSetupError.migrationFailed(errorMessage)
         } else {
-            throw DatabaseError.configurationFailed(errorMessage)
+            throw DatabaseSetupError.configurationFailed(errorMessage)
         }
     }
 }

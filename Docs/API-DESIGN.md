@@ -9,7 +9,8 @@ This is a learning project for spec-first API design with OpenAPI, Swift and Vap
 document explains the mechanics involved rather than only listing the work.
 
 Companion documents: [`API-COVERAGE.md`](API-COVERAGE.md) audits how well the *existing* surface is
-tested, [`TESTING.md`](TESTING.md) holds assertion conventions, [`ISSUES.md`](ISSUES.md) records
+tested, [`FLUENT.md`](FLUENT.md) explains the ORM layering these handlers sit on,
+[`TESTING.md`](TESTING.md) holds assertion conventions, [`ISSUES.md`](ISSUES.md) records
 defects found and fixed, and [`LEARNING-PATH.md`](LEARNING-PATH.md) sets these phases in the wider
 context of building larger backends. [`POSTGRES.md`](POSTGRES.md) works through the database move
 that §2.3 below argues should happen before Phase 2. This document is about what the API *should*
@@ -136,11 +137,9 @@ what it taught are written up in [`MIGRATIONS.md`](MIGRATIONS.md).
 rather than a solved problem — the first genuine John Smith collision is a schema change, not a bug
 fix. Revisit it when the directory holds real people.
 
-**Still outstanding:** nothing maps the constraint violation to a `409`. The handler's pre-check
-produces the 409 in the common case, but the losing side of a race gets a `500`, because
-`createEmployee` ends in `catch { throw error }`. `createDepartment` has the identical gap. See
-*What this did not fix* in [`MIGRATIONS.md`](MIGRATIONS.md) — the fix is to key on SQLSTATE `23505`
-in both handlers.
+**Also done:** `createDepartment`, `updateDepartment` and `createEmployee` now map a constraint
+violation to `409`, so the losing side of a race no longer gets a `500`. The mechanism, and the
+reason it stops being exact once Phase 2 adds a foreign key, is in [`FLUENT.md`](FLUENT.md).
 
 ## 1.3 Decision — `PATCH` semantics
 

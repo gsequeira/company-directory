@@ -48,7 +48,28 @@ struct APIHandler: APIProtocol {
                 let newDepartment = Models.Department()
                 newDepartment.name = createRequest.name
 
-                try await newDepartment.save(on: database)
+                do {
+                    try await newDepartment.save(on: database)
+                } catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+                    // The pre-check lost the race: another request inserted this name between the
+                    // query above and this save, and the unique index rejected the second insert.
+                    // Without this, the loser of that race gets a 500 for a plain conflict.
+                    //
+                    // `isConstraintFailure` covers every constraint type, which is precise enough
+                    // only because uniqueness is currently the sole constraint on this table. The
+                    // Phase 2 foreign key will break that assumption — see the note in
+                    // Docs/MIGRATIONS.md.
+                    return .conflict(
+                        .init(
+                            body: .json(
+                                Components.Schemas.ConflictError(
+                                    error: true,
+                                    reason: "A department with the name '\(createRequest.name)' already exists"
+                                )
+                            )
+                        )
+                    )
+                }
 
                 let departmentResponse = Components.Schemas.Department(
                     id: Int(newDepartment.id!),
@@ -105,7 +126,22 @@ struct APIHandler: APIProtocol {
 
                 existingDepartment.name = updateRequest.name
 
-                try await existingDepartment.save(on: database)
+                do {
+                    try await existingDepartment.save(on: database)
+                } catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+                    // Same race as createDepartment, reached by renaming onto a name another
+                    // request took in the meantime.
+                    return .conflict(
+                        .init(
+                            body: .json(
+                                Components.Schemas.ConflictError(
+                                    error: true,
+                                    reason: "A department with the name '\(updateRequest.name)' already exists"
+                                )
+                            )
+                        )
+                    )
+                }
 
                 let departmentResponse = Components.Schemas.Department(
                     id: Int(existingDepartment.id!),
@@ -179,7 +215,23 @@ struct APIHandler: APIProtocol {
                 newEmployee.firstName = createRequest.firstName
                 newEmployee.lastName = createRequest.lastName
 
-                try await newEmployee.save(on: database)
+                do {
+                    try await newEmployee.save(on: database)
+                } catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+                    // See createDepartment: the pre-check races, and the unique constraint added
+                    // by Migrations.AddEmployeeNameUniqueness is what catches the loser.
+                    return .conflict(
+                        .init(
+                            body: .json(
+                                Components.Schemas.ConflictError(
+                                    error: true,
+                                    reason:
+                                        "An employee named '\(createRequest.firstName) \(createRequest.lastName)' already exists"
+                                )
+                            )
+                        )
+                    )
+                }
 
                 let employeeResponse = Components.Schemas.Employee(
                     id: Int(newEmployee.id!),

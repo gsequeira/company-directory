@@ -130,7 +130,7 @@ a migration does something unexpected, this is the first place to look, ahead of
 what the DSL means.
 
 **SQLSTATE `23505` is the unique-violation code.** Match on that, never on the message text — see
-*What this did not fix* below.
+*The constraint alone was not enough* below.
 
 ## What the failure left behind: nothing
 
@@ -221,34 +221,73 @@ schema per test, described in [`POSTGRES.md`](POSTGRES.md) step 6.
 
 ---
 
-# What this did not fix
+# The constraint alone was not enough
 
-The constraint makes the database honest. It does not make the API honest.
+**Resolved the same day.** The sequence is worth keeping, because adding the constraint briefly
+made one thing *worse*.
 
-`createEmployee` still produces its 409 from the pre-check at `APIHandler.swift:165`, and nothing
-maps a constraint violation to a response — the handler ends in `catch { throw error }`. So the
-losing side of a genuine race now gets a **500**, not a 409. The database rejects the write
-correctly; the client is told the wrong thing about why.
+The constraint makes the database honest. It did not make the API honest. Both create handlers
+produce their `409` from a pre-check query, and nothing mapped a constraint violation to a
+response — each ended in `catch { throw error }`. So the losing side of a genuine race got a
+**500**: the database rejected the write correctly, and the client was told the wrong thing about
+why. `createDepartment` had that gap from the start; `AddEmployeeNameUniqueness` gave
+`createEmployee` the same one.
 
-`createDepartment` has had the identical gap since the beginning. The comment at
-`APIHandler.swift:33-36` says the unique index "is what actually prevents the duplicate, by failing
-the second insert" — accurate, and that failure surfaces as a 500.
-
-The fix is to catch the violation and map it, keying on the SQLSTATE rather than the message:
+The fix, applied to `createDepartment`, `updateDepartment` and `createEmployee`:
 
 ```swift
-// Sketch — 23505 is unique_violation.
-catch let error as PSQLError where error.serverInfo?[.sqlState] == "23505" {
-    return .conflict(.init(body: .json(...)))
+do {
+    try await newDepartment.save(on: database)
+} catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+    return .conflict(...)
 }
 ```
 
-Worth doing for both handlers together, at which point the pre-checks become an optimisation that
-produces a friendlier message in the common case, rather than the only thing standing between a
-client and a 500. Not yet done.
+`FluentKit.DatabaseError` is a driver-agnostic protocol that `fluent-postgres-driver` conforms
+PostgreSQL's error types to, so no PostgreSQL import enters the handler. Why that works, and what
+the abstraction costs after Phase 2 adds a foreign key, is [`FLUENT.md`](FLUENT.md).
 
-*(Derived from reading the code; a genuine race is hard to trigger deliberately. Confirm it by
-provoking the violation directly before relying on the reasoning.)*
+The pre-checks stay. They are now an optimisation giving a friendlier path in the common case,
+rather than the only thing between a client and a 500.
+
+## Forcing the race deterministically
+
+This technique is the reusable part, and the first attempt at it failed instructively.
+
+Firing 125 concurrent duplicate `POST`s produced 1×`201` and 24×`409` per round with zero `500`s —
+which looked like proof and was not. `pg_stat_database.xact_rollback` had not moved at all, meaning
+no insert ever reached the database and every conflict came from the pre-check. The HTTP client's
+process startup was slower than the race window. **A concurrency test whose requests never overlap
+reports success for the wrong reason** — the same trap as the routing `404` in
+[`TESTING.md`](TESTING.md) step 5, wearing a different costume.
+
+Transaction isolation makes it deterministic. An uncommitted `INSERT` is invisible to the handler's
+pre-check under `READ COMMITTED`, but still blocks its insert on the unique index:
+
+```bash
+# Hold the row uncommitted for five seconds.
+psql -h localhost -p 5432 -U foobar -d foobar <<'SQL' &
+BEGIN;
+INSERT INTO departments (name, inserted_at, updated_at) VALUES ('LockTest', now(), now());
+SELECT pg_sleep(5);
+COMMIT;
+SQL
+
+sleep 1
+http --print=h POST :8080/api/departments name=LockTest
+```
+
+The request's pre-check finds nothing, proceeds to insert, blocks until the other transaction
+commits, then fails with `23505`.
+
+| | Response | `xact_rollback` delta |
+| --- | --- | --- |
+| With the mapping | `409 Conflict` | 1 |
+| Without it (stashed, rebuilt) | `500 Internal Server Error` | — |
+
+Both directions confirmed — the second one matters as much as the first, per
+[`TESTING.md`](TESTING.md) step 5. And check the rollback delta, not just the status code: it is
+what proves the insert reached the database rather than the pre-check answering early.
 
 # Not yet encountered
 

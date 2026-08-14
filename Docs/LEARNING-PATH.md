@@ -27,6 +27,13 @@ both of which this project has already hit.
 overflow that killed the process, the path parameter mismatch, the test that passed without ever
 entering the handler. That habit matters more than any specific framework knowledge.
 
+It extends to the frameworks themselves. Nearly everything in [`FLUENT.md`](FLUENT.md) — which
+module owns which type, where a database error is actually thrown, what a driver adds to the ORM
+core — came from reading `.build/checkouts` rather than documentation. The checkouts are the exact
+version you compile against, so they cannot be out of date, and they answer boundary questions in
+seconds that official docs rarely address at all. Being willing to read a dependency's source is
+the difference between using a framework and understanding one.
+
 ## The gap: CRUD is the easy 20%
 
 Everything built so far is *entity in, entity out*. A shopping backend's difficulty lives

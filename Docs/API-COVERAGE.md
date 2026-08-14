@@ -30,6 +30,11 @@ endpoints. Beneath that:
 
 ### Open items
 
+> **Status lives in GitHub Issues** as of 2026-08-14. The tracker holds what is outstanding and how
+> far along it is; these documents hold the reasoning. Issues link back here rather than repeating
+> the explanation, so read the doc for *why* and the issue for *whether it is done*. Don't copy
+> prose between them — that is how one of them becomes quietly wrong.
+
 | Item | Kind | Where |
 | --- | --- | --- |
 | The two `401` declarations describe authentication that does not exist, and are asymmetric | Spec defect | [below](#the-two-401s-are-spec-defects-not-test-gaps--needs-addressing) |

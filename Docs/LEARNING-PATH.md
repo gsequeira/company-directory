@@ -120,9 +120,20 @@ run so far has been against an empty schema, which is the easy case.
 
 Better to discover the difference on a directory than on an orders table.
 
-### Add a Phase 3 that is not CRUD
+### Add phases that are not CRUD
 
-You do not need a new domain to meet the hard concepts. In the existing model:
+You do not need a new domain to meet the hard concepts — the existing one supports both of the
+exercises worked out below. They are the cheapest available on-ramp to sections 1 and 4 above.
+
+---
+
+# Two worked exercises
+
+The operative word is **forces**. `database.transaction { }` can be added anywhere; adding it to
+`createDepartment` changes nothing observable, and you learn the syntax without the concept. Both
+exercises below are chosen so that the naive implementation fails a test you can actually write.
+
+## Phase 3 — the operation that forces a transaction
 
 > **Move all employees from one department to another, then delete the source department.**
 
@@ -149,25 +160,161 @@ You do not need a new domain to meet the hard concepts. In the existing model:
         "409": { description: The source and target are the same department. }
 ```
 
+### Why it forces one
+
+Two writes that must both land: the bulk reassignment and the delete. If the delete fails after the
+update succeeds, everyone has been moved out of a department that still exists — wrong data, and no
+error surfaced to anyone.
+
+This only becomes true after Phase 2. Without the relationship there is nothing to move, which is
+why this belongs at the end of the roadmap rather than now.
+
+### The Fluent detail that catches people
+
 ```swift
 try await database.transaction { db in
-    try await Models.Employee.query(on: db)
+    try await Models.Employee.query(on: db)      // `db`, the transaction handle
         .filter(\.$department.$id == sourceId)
         .set(\.$department.$id, to: targetId)
         .update()
 
     if request.deleteSourceAfterTransfer {
-        try await source.delete(on: db)
+        try await source.delete(on: db)          // `db` again
     }
 }
 ```
 
-That one operation gives you: a multi-entity write that must be atomic, a real transaction, an
-endpoint shape that is not CRUD, a bulk update rather than a per-row loop, and a failure mode you
-can test by making the delete fail and asserting the employees did *not* move.
+The closure hands you a `db`, and **every query inside must use it**. Writing `query(on: database)`
+— the captured outer property — compiles, runs, and silently executes outside the transaction. The
+result is a transaction wrapping nothing, with no warning of any kind.
 
-It is the cheapest available on-ramp to sections 1 and 4 above, and it fits the domain you already
-have.
+This is the most common Fluent transaction bug and it is invisible until the rollback path is
+tested.
+
+### Testing the rollback — the actual exercise
+
+The happy path passing proves nothing; the rollback is the only thing that demonstrates the
+transaction exists. That needs a genuinely reachable failure, and the Phase 2 foreign key provides
+one if `.restrict` was chosen:
+
+1. Transfer employees from A to B, with a deliberate filter bug that leaves one behind.
+2. Deleting A fails, because a row still references it.
+3. Assert that **nobody moved** — the transferred employees are still in A.
+
+Without the transaction, step 3 fails: most employees moved, the delete failed, and the data is now
+split across two departments with nothing recording it.
+
+The alternative is a test-only injected throw. Same lesson, less elegant — prefer the constraint
+violation, because the failure is real rather than simulated.
+
+### An aside worth noticing
+
+Ask whether this operation is idempotent. Run it twice: the second run moves zero employees and the
+source is already gone, so it `404`s. That is naturally idempotent for a different reason than a
+payment endpoint would be, and thinking it through sharpens what idempotency means before reaching
+a case where it has to be engineered deliberately.
+
+## Phase 4 — the operation that forces a state machine
+
+> **Employment status on `Employee`:** `invited → active → onLeave → active → departed`
+
+A real requirement for a directory rather than a contrived one. `departed` is terminal: returning
+to `active` must be refused, not silently allowed.
+
+### Why it forces one
+
+Three properties CRUD does not have:
+
+1. **Not every change is legal.** `departed → active` must be rejected. A `PATCH` carrying a
+   `status` field cannot express that — it accepts whatever it is given, which puts the rules in
+   every client's hands.
+2. **Transitions carry their own data.** Departing has a leaving date and possibly a reason;
+   returning from leave has neither. Different request bodies mean different endpoints.
+3. **Transitions have side effects.** Does departing unassign the employee from their department?
+   That decision belongs to the transition, not to a field assignment.
+
+### The endpoint shape
+
+Name the transition rather than the field:
+
+```
+POST /employees/{employeeId}/activate
+POST /employees/{employeeId}/start-leave
+POST /employees/{employeeId}/depart
+```
+
+The status code that matters is **`409`** for an illegal transition — a conflict with the
+resource's current state, which is precisely what `409` means. `400` would be wrong: the request is
+well-formed, it is the state that is incompatible.
+
+### What the generator gives you
+
+```yaml
+    EmploymentStatus:
+      type: string
+      enum: [invited, active, onLeave, departed]
+```
+
+`swift-openapi-generator` turns this into a Swift enum, making illegal *values* unrepresentable at
+the type level. Illegal *transitions* still need runtime logic — keep it on the enum itself rather
+than scattered across three handlers:
+
+```swift
+extension Components.Schemas.EmploymentStatus {
+    func canTransition(to next: Self) -> Bool {
+        switch (self, next) {
+        case (.invited, .active), (.active, .onLeave),
+             (.onLeave, .active), (.active, .departed), (.onLeave, .departed):
+            return true
+        default:
+            return false
+        }
+    }
+}
+```
+
+### Where it pays off in testing
+
+A state machine produces a natural transition matrix — four states against three transitions —
+which is what Swift Testing's parameterised tests exist for:
+
+```swift
+@Test("illegal transitions are rejected", arguments: [
+    (EmploymentStatus.departed, "activate"),
+    (EmploymentStatus.invited, "start-leave"),
+    (EmploymentStatus.departed, "start-leave"),
+])
+func rejectsIllegalTransition(from: EmploymentStatus, endpoint: String) async throws {
+    // ... expect 409
+}
+```
+
+One function covering the whole illegal half of the matrix, against a current suite where every
+case is hand-written.
+
+## Where the two converge
+
+Two concurrent requests both call `/depart` on the same employee. Both read `status == .active`,
+both find the transition legal, both write — and the departure side effects run twice.
+
+The fix is **compare-and-swap**: write the new status conditionally on the old one still being what
+was read. That requires the read and the write to sit in the same transaction — Phase 3's tool
+applied to Phase 4's problem, which is why doing both is worth more than doing either.
+
+One concrete constraint: Fluent's `QueryBuilder.update()` returns `Void`, with no affected-row
+count. The SQL-style `UPDATE ... WHERE status = 'active'` followed by checking whether one row
+changed is therefore not directly available. Either read-then-write inside a transaction and rely
+on its isolation, or drop to SQLKit for the conditional update and inspect the result.
+
+That is an instructive limitation to meet — it is the point where the ORM stops being the whole
+world.
+
+### Order
+
+Transaction first. It is mechanically simpler, its failure is easier to construct, and the state
+machine's concurrency problem cannot be approached without the tool the transaction exercise
+provides. Then the state machine. Then make one transition concurrency-safe, at which point both
+exercises are doing work at once.
 
 ---
 
@@ -213,9 +360,13 @@ retry.
 3. **Move to PostgreSQL**, ideally before Phase 2's foreign key, so the constraint is real.
 4. **Phase 3: the transfer operation** — transactions and non-CRUD endpoint design.
 5. **Error middleware**, which also closes the `500` defect.
-6. **Then start the shopping domain**, with money, state machines and idempotency as deliberate
+6. **Phase 4: employment status** — state machines, transition-named endpoints, parameterised
+   tests.
+7. **Make one transition concurrency-safe** — compare-and-swap, which needs Phase 3's transaction
+   applied to Phase 4's problem.
+8. **Then start the shopping domain**, with money, state machines and idempotency as deliberate
    exercises rather than things discovered late.
 
 The honest summary: the approach is sound, and the rigour is already there. What is missing is not
-discipline but *exposure to problems that CRUD does not have*. Steps 3 to 5 above are the cheapest
+discipline but *exposure to problems that CRUD does not have*. Steps 3 to 7 above are the cheapest
 way to get that exposure without leaving a domain you already understand.

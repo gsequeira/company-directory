@@ -12,18 +12,15 @@ struct APIHandler: APIProtocol {
 
     func listDepartments(_ input: Operations.ListDepartments.Input) async throws -> Operations.ListDepartments.Output {
         do {
-            // Query all departmentsfrom the database
             let departments = try await Models.Department.query(on: database).all()
 
-            // Convert database models to API response format
             let departmentComponents = departments.map { department in
                 Components.Schemas.Department(id: Int(department.id!), name: department.name)
             }
 
-            // Create paginated response
-            let pageOfDepartments = Components.Schemas.PageOfDepartments(departments: departmentComponents)
+            let departmentList = Components.Schemas.DepartmentList(departments: departmentComponents)
 
-            return .ok(.init(body: .json(pageOfDepartments)))
+            return .ok(.init(body: .json(departmentList)))
         } catch {
             throw error
         }
@@ -33,7 +30,10 @@ struct APIHandler: APIProtocol {
         do {
             switch input.body {
             case .json(let createRequest):
-                // Check for existing department with the same name
+                // This check and the insert below are not atomic: two concurrent requests can
+                // both find no match and both proceed. The unique index on `name` (see
+                // Migrations.CreateDepartments) is what actually prevents the duplicate, by
+                // failing the second insert.
                 if try await Models.Department.query(on: database)
                     .filter(\.$name == createRequest.name)
                     .first() != nil
@@ -45,15 +45,11 @@ struct APIHandler: APIProtocol {
                     return .conflict(.init(body: .json(conflictResponse)))
                 }
 
-                // Create new department model
                 let newDepartment = Models.Department()
                 newDepartment.name = createRequest.name
-                newDepartment.updatedAt = Date()
 
-                // Save to database
                 try await newDepartment.save(on: database)
 
-                // Convert to API response format
                 let departmentResponse = Components.Schemas.Department(
                     id: Int(newDepartment.id!),
                     name: newDepartment.name,
@@ -68,15 +64,13 @@ struct APIHandler: APIProtocol {
 
     func getDepartmentDetail(_ input: Operations.GetDepartmentDetail.Input) async throws -> Operations.GetDepartmentDetail.Output {
         do {
-             let departmentId = input.path.departmentId
+            let departmentId = input.path.departmentId
 
-             // Find the department by ID in the database
-             guard let department = try await Models.Department.find(Int32(departmentId), on: database) else {
+            guard let department = try await Models.Department.find(departmentId, on: database) else {
                 return .notFound(.init())
-             }
+            }
 
-             // Convert database model to API response format
-             let departmentResponse = Components.Schemas.Department(
+            let departmentResponse = Components.Schemas.Department(
                 id: Int(department.id!),
                 name: department.name
             )
@@ -93,12 +87,10 @@ struct APIHandler: APIProtocol {
 
             switch input.body {
             case .json(let updateRequest):
-                // Find the existing department
-                guard let existingDepartment = try await Models.Department.find(Int32(departmentId), on: database) else {
+                guard let existingDepartment = try await Models.Department.find(departmentId, on: database) else {
                     return .notFound(.init())
                 }
 
-                // Check if another department already has this name (excluding current department)
                 if try await Models.Department.query(on: database)
                     .filter(\.$name == updateRequest.name)
                     .filter(\.$id != existingDepartment.id!)
@@ -111,12 +103,10 @@ struct APIHandler: APIProtocol {
                     return .conflict(.init(body: .json(conflictResponse)))
                 }
 
-                // Update the department
                 existingDepartment.name = updateRequest.name
 
                 try await existingDepartment.save(on: database)
 
-                // Convert to API response format
                 let departmentResponse = Components.Schemas.Department(
                     id: Int(existingDepartment.id!),
                     name: existingDepartment.name
@@ -131,17 +121,74 @@ struct APIHandler: APIProtocol {
 
     func deleteDepartment(_ input: Operations.DeleteDepartment.Input) async throws -> Operations.DeleteDepartment.Output {
         do {
-            let departmentid = input.path.departmentId
+            let departmentId = input.path.departmentId
 
-            // Find the existing department
-            guard let existingDepartment = try await Models.Department.find(Int32(departmentid), on: database) else {
+            guard let existingDepartment = try await Models.Department.find(departmentId, on: database) else {
                 return .notFound(.init())
             }
 
-            // Delete the department from the database
             try await existingDepartment.delete(on: database)
 
             return .noContent(.init())
+        } catch {
+            throw error
+        }
+    }
+
+    func listEmployees(_ input: Operations.ListEmployees.Input) async throws -> Operations.ListEmployees.Output {
+        do {
+            let employees = try await Models.Employee.query(on: database).all()
+
+            let employeeComponents = employees.map { employee in
+                Components.Schemas.Employee(
+                    id: Int(employee.id!),
+                    firstName: employee.firstName,
+                    lastName: employee.lastName
+                )
+            }
+
+            let employeeList = Components.Schemas.EmployeeList(employees: employeeComponents)
+
+            return .ok(.init(body: .json(employeeList)))
+        } catch {
+            throw error
+        }
+    }
+
+    func createEmployee(_ input: Operations.CreateEmployee.Input) async throws -> Operations.CreateEmployee.Output {
+        do {
+            switch input.body {
+            case .json(let createRequest):
+                // Unlike departments, there is no unique index backing this check, so concurrent
+                // requests can create duplicate employees. Names are not required to be unique
+                // in the schema.
+                if try await Models.Employee.query(on: database)
+                    .filter(\.$firstName == createRequest.firstName)
+                    .filter(\.$lastName == createRequest.lastName)
+                    .first() != nil
+                {
+                    let conflictResponse = Components.Schemas.ConflictError(
+                        error: true,
+                        reason: "An employee named '\(createRequest.firstName) \(createRequest.lastName)' already exists"
+                    )
+
+                    return .conflict(.init(body: .json(conflictResponse)))
+                }
+
+                let newEmployee = Models.Employee()
+                newEmployee.firstName = createRequest.firstName
+                newEmployee.lastName = createRequest.lastName
+
+                try await newEmployee.save(on: database)
+
+                let employeeResponse = Components.Schemas.Employee(
+                    id: Int(newEmployee.id!),
+                    firstName: newEmployee.firstName,
+                    lastName: newEmployee.lastName
+                )
+
+                return .created(.init(body: .json(employeeResponse)))
+            }
         } catch {
             throw error
         }

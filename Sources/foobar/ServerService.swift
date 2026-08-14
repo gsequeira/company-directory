@@ -3,16 +3,18 @@ import Vapor
 import ServiceLifecycle
 import OpenAPIVapor
 
+/// Configures the database, routes and OpenAPI handlers, then returns the server as a
+/// `Service` ready to be run by a `ServiceGroup`.
+///
+/// The returned service is not started; calling this function has no effect on the network.
 func configureServer(_ application: Application) async throws -> Service {
-    // Configure the database
     try await configureDatabase(application: application)
 
     routes(application)
 
-    // Create API handler for request processing
     let handler = APIHandler(database: application.db)
 
-    // Register OpenAPI-generated handlers with Vapor transport
+    // Registers every operation declared in openapi.yaml onto the Vapor router.
     let transport = VaporTransport(routesBuilder: application)
     try handler.registerHandlers(
         on: transport,

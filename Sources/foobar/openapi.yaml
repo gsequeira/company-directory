@@ -1,29 +1,38 @@
----
 openapi: 3.1.1
 info:
-  title: foobar
+  title: Company Directory API
   version: 0.1.0
+  description: API for managing company employees and departments
+  contact:
+    email: glenn@sequeiralabs.com
 servers:
   - url: /api
+tags:
+  - name: departments
+    description: Department management endpoints
+  - name: employees
+    description: Employee management endpoints
 paths:
   /departments:
     get:
-      summary: Fetch a list of departments
+      summary: List departments
+      description: Retrieves a list of all departments.
       operationId: listDepartments
       tags:
-        - Departments
+        - departments
       responses:
         "200":
-          description: Returns the list of departments
+          description: The list of departments was retrieved successfully.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PageOfDepartments"
+                $ref: "#/components/schemas/DepartmentList"
     post:
-      summary: Create a new department
+      summary: Create a department
+      description: Creates a new department with the given name.
       operationId: createDepartment
       tags:
-        - Departments
+        - departments
       requestBody:
         required: true
         content:
@@ -32,15 +41,15 @@ paths:
               $ref: "#/components/schemas/CreateDepartmentRequest"
       responses:
         "201":
-          description: The department was created successfully
+          description: The department was created successfully.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Department"
         "401":
-          description: Unauthorized
+          description: The request was not authenticated.
         "409":
-          description: Conflict - A department with this name already exists
+          description: A department with this name already exists.
           content:
             application/json:
               schema:
@@ -49,24 +58,26 @@ paths:
     parameters:
       - $ref: "#/components/parameters/path.departmentId"
     get:
-      summary: Fetch the details of a department
+      summary: Retrieve a department
+      description: Retrieves the details of a single department by ID.
       operationId: getDepartmentDetail
       tags:
-        - Departments
+        - departments
       responses:
         "200":
-          description: A successfull response
+          description: The department was retrieved successfully.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Department"
         "404":
-          description: A department with this id was not found
+          description: No department exists with the specified ID.
     patch:
-      summary: Update any exisitng department
+      summary: Update a department
+      description: Updates the name of an existing department.
       operationId: updateDepartment
       tags:
-        - Departments
+        - departments
       requestBody:
         required: true
         content:
@@ -75,29 +86,71 @@ paths:
               $ref: "#/components/schemas/UpdateDepartmentRequest"
       responses:
         "200":
-          description: The department was updated successfully
+          description: The department was updated successfully.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Department"
         "404":
-          description: A department with this id was not found
+          description: No department exists with the specified ID.
         "409":
-          description: Conflict - a department with this name already exists
+          description: A department with this name already exists.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictError"
     delete:
-      summary: Delete an existing department
+      summary: Delete a department
+      description: Permanently deletes an existing department.
       operationId: deleteDepartment
       tags:
-        - Department
+        - departments
       responses:
         "204":
-          description: The department was deleted successfully
+          description: The department was deleted successfully.
         "404":
-          description: A department with this id was not found
+          description: No department exists with the specified ID.
+  /employees:
+    get:
+      summary: List employees
+      description: Retrieves a list of all employees.
+      operationId: listEmployees
+      tags:
+        - employees
+      responses:
+        "200":
+          description: The list of employees was retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeList"
+    post:
+      summary: Create an employee
+      description: Creates a new employee with a given first name and last name.
+      operationId: createEmployee
+      tags:
+        - employees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeRequest"
+      responses:
+        "201":
+          description: The employee was created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "401":
+          description: The request was not authenticated.
+        "409":
+          description: An employee with this name already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictError"
 components:
   parameters:
     path.departmentId:
@@ -106,23 +159,23 @@ components:
       required: true
       schema:
         type: integer
-        format: int
+        format: int32
   schemas:
     Department:
-      description: A department
+      description: Represents a department within the organization.
       properties:
         id:
           type: integer
-          description: The primary key of the department
+          description: The primary key of the department.
         name:
           type: string
-          description: The name of the department
-          example: "Customer Support"
+          description: The name of the department.
+          example: Customer Support
       required:
         - id
         - name
-    PageOfDepartments:
-      description: A single page of departments
+    DepartmentList:
+      description: A collection of departments.
       properties:
         departments:
           type: array
@@ -131,30 +184,70 @@ components:
       required:
         - departments
     CreateDepartmentRequest:
-      description: The request data required to create a department
+      description: The payload required to create a new department.
       properties:
         name:
-          description: The name of the department
+          description: The name of the department.
           type: string
       required:
         - name
+    UpdateDepartmentRequest:
+      description: The payload required to update an existing department.
+      properties:
+        name:
+          description: The updated name for the department.
+          type: string
+      required:
+        - name
+    Employee:
+      description: Represents an employee within the organization.
+      properties:
+        id:
+          type: integer
+          description: The primary key of the employee.
+        firstName:
+          type: string
+          description: The first name of the employee.
+          example: Jane
+        lastName:
+          type: string
+          description: The last name of the employee.
+          example: Doe
+      required:
+        - id
+        - firstName
+        - lastName
+    EmployeeList:
+      description: A collection of employees.
+      properties:
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/Employee"
+      required:
+        - employees
+    CreateEmployeeRequest:
+      description: The payload required to create a new employee.
+      properties:
+        firstName:
+          description: The first name of the employee.
+          type: string
+        lastName:
+          description: The last name of the employee.
+          type: string
+      required:
+        - firstName
+        - lastName
     ConflictError:
-      description: Error response for conflicts
+      description: Standard error response returned when a request conflicts with
+        existing data.
       properties:
         error:
           type: boolean
           example: true
         reason:
           type: string
-          example: "A department with the name 'Customer Support' already exists"
+          example: A resource with this name already exists
       required:
         - error
         - reason
-    UpdateDepartmentRequest:
-      description: The request data required for updating a department
-      properties:
-        name:
-          description: The updated name for the department
-          type: string
-      required:
-        - name

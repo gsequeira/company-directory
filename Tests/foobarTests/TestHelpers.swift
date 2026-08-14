@@ -9,6 +9,12 @@ import VaporTesting
 @testable import foobar
 
 struct TestHelpers {
+    /// Runs `testBody` against a fully configured `Application` backed by a fresh in-memory
+    /// database.
+    ///
+    /// Each call gets its own database, so tests are isolated and can assume an empty schema.
+    /// Migrations are reverted and the application is shut down on both the success and failure
+    /// paths, so a failing test still cleans up after itself.
     static func withApplication<T>(_ testBody: (Application) async throws -> T) async throws -> T {
         let application = try await Application.make(.testing)
 

@@ -11,6 +11,7 @@ import VaporTesting
 @Suite("API Handler Integration Tests")
 struct APIHandlerIntegrationTests {
 
+    // Tests for Department
     @Test("POST /api/departments creates a new department successfully")
     func testCreateDepartmentSuccess() async throws {
         try await TestHelpers.withApplication { application in
@@ -59,8 +60,8 @@ struct APIHandlerIntegrationTests {
             #expect(response.status == .ok)
             #expect(response.headers.contentType == .json)
 
-            let pageOfDepartments = try response.content.decode(Components.Schemas.PageOfDepartments.self)
-            #expect(pageOfDepartments.departments.isEmpty)
+            let departmentList = try response.content.decode(Components.Schemas.DepartmentList.self)
+            #expect(departmentList.departments.isEmpty)
         }
     }
 
@@ -74,16 +75,15 @@ struct APIHandlerIntegrationTests {
             _ = try await application.sendRequest(.POST, "/api/departments", body: department1)
             _ = try await application.sendRequest(.POST, "/api/departments", body: department2)
 
-            // List departments
             let response = try await application.sendRequest(.GET, "/api/departments")
 
             #expect(response.status == .ok)
             #expect(response.headers.contentType == .json)
 
-            let pageOfDepartments = try response.content.decode(Components.Schemas.PageOfDepartments.self)
-            #expect(pageOfDepartments.departments.count == 2)
+            let departmentList = try response.content.decode(Components.Schemas.DepartmentList.self)
+            #expect(departmentList.departments.count == 2)
 
-            let names = pageOfDepartments.departments.map { $0.name }
+            let names = departmentList.departments.map { $0.name }
             #expect(names.contains("Engineering"))
             #expect(names.contains("Sales"))
         }
@@ -119,7 +119,7 @@ struct APIHandlerIntegrationTests {
         }
     }
 
-    @Test("PATCH /api/departments/{departmentId} updates exisitng department successfully")
+    @Test("PATCH /api/departments/{departmentId} updates existing department successfully")
     func testUpdateDepartmentSuccess() async throws {
         try await TestHelpers.withApplication { application in
             // Create a department
@@ -163,7 +163,7 @@ struct APIHandlerIntegrationTests {
     func testDeleteDepartmentNotFound() async throws {
         try await TestHelpers.withApplication { application in
             // Attempt to delete a department that doesn't exist
-            let response = try await application.sendRequest(.DELETE, "/api/departments.999")
+            let response = try await application.sendRequest(.DELETE, "/api/departments/999")
             #expect(response.status == .notFound)
         }
     }
@@ -177,6 +177,8 @@ struct APIHandlerIntegrationTests {
 
             let response1 = try await application.sendRequest(.POST, "/api/departments", body: department1)
             let response2 = try await application.sendRequest(.POST, "/api/departments", body: department2)
+            try #require(response1.status == .created)
+            try #require(response2.status == .created)
 
             let createDepartment2 = try response2.content.decode(Components.Schemas.Department.self)
 
@@ -185,9 +187,85 @@ struct APIHandlerIntegrationTests {
 
             // Verify only one department remains in the list
             let listResponse = try await application.sendRequest(.GET, "/api/departments")
-            let pageOfDepartments = try listResponse.content.decode(Components.Schemas.PageOfDepartments.self)
-            #expect(pageOfDepartments.departments.count == 1)
-            #expect(pageOfDepartments.departments.first?.name == "Engineering")
+            let departmentList = try listResponse.content.decode(Components.Schemas.DepartmentList.self)
+            #expect(departmentList.departments.count == 1)
+            #expect(departmentList.departments.first?.name == "Engineering")
+        }
+    }
+
+    // Tests for Employee
+    @Test("POST /api/employees creates a new employee successfully")
+    func testCreateEmployeeSuccess() async throws {
+        try await TestHelpers.withApplication { application in
+            let createRequest = Components.Schemas.CreateEmployeeRequest(
+                firstName: "Jane",
+                lastName: "Doe"
+            )
+
+            let response = try await application.sendRequest(.POST, "/api/employees", body: createRequest)
+            #expect(response.status == .created)
+            #expect(response.headers.contentType == .json)
+
+            let createdEmployee = try response.content.decode(Components.Schemas.Employee.self)
+            #expect(createdEmployee.firstName == "Jane")
+            #expect(createdEmployee.lastName == "Doe")
+            #expect(createdEmployee.id > 0)
+        }
+    }
+
+    @Test("POST /api/employees returns conflict for duplicate employees")
+    func testCreateEmployeeDuplicateName() async throws {
+        try await TestHelpers.withApplication { application in
+            let createRequest = Components.Schemas.CreateEmployeeRequest(
+                firstName: "Jane",
+                lastName: "Doe"
+            )
+
+            // Create the first employee
+            _ = try await application.sendRequest(.POST, "/api/employees", body: createRequest)
+
+            // Attempt to create a duplicate employee
+            let duplicateResponse = try await application.sendRequest(.POST, "/api/employees", body: createRequest)
+            #expect(duplicateResponse.status == .conflict)
+            #expect(duplicateResponse.headers.contentType == .json)
+
+            let conflictError = try duplicateResponse.content.decode(Components.Schemas.ConflictError.self)
+            #expect(conflictError.error == true)
+            #expect(conflictError.reason.contains("Jane Doe"))
+        }
+    }
+
+    @Test("GET /api/employees returns empty list when no employee exists")
+    func testListEmployeesEmpty() async throws {
+        try await TestHelpers.withApplication { application in
+            let response = try await application.sendRequest(.GET, "/api/employees")
+            #expect(response.status == .ok)
+            #expect(response.headers.contentType == .json)
+
+            let employeeList = try response.content.decode(Components.Schemas.EmployeeList.self)
+            #expect(employeeList.employees.isEmpty)
+        }
+    }
+
+    @Test("GET /api/employees returns a list of employees when employees exist")
+    func testListEmployeesWithData() async throws {
+        try await TestHelpers.withApplication { application in
+            let employee1 = Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace")
+            let employee2 = Components.Schemas.CreateEmployeeRequest(firstName: "Grace", lastName: "Hopper")
+
+            // Create two employees
+            let response1 = try await application.sendRequest(.POST, "/api/employees", body: employee1)
+            let response2 = try await application.sendRequest(.POST, "/api/employees", body: employee2)
+            try #require(response1.status == .created)
+            try #require(response2.status == .created)
+
+            let response = try await application.sendRequest(.GET, "/api/employees")
+            #expect(response.status == .ok)
+            #expect(response.headers.contentType == .json)
+
+            let employeeList = try response.content.decode(Components.Schemas.EmployeeList.self)
+            #expect(employeeList.employees.count == 2)
+            #expect(Set(employeeList.employees.map(\.fullName)) == ["Ada Lovelace", "Grace Hopper"])
         }
     }
 }

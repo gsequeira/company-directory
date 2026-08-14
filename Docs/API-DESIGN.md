@@ -122,12 +122,25 @@ data. And unlike departments — which have a genuine unique index on `name` —
 has no constraint behind the check, so it is also a read-then-write race that two concurrent
 requests can both pass.
 
-**Recommendation:** drop the check and the `409` from `createEmployee`. Identity belongs to the
+**Recommendation was:** drop the check and the `409` from `createEmployee`. Identity belongs to the
 `id`, not the name. If you want a duplicate-detection feature later, a warning on read is a better
 shape than a hard rejection on write.
 
-If you keep it, add a unique index on `(first_name, last_name)` so the constraint is real, and map
-the resulting database error to `409` rather than relying on the pre-check.
+## Decided 2026-08-14 — keep the 409, back it with a constraint
+
+The other direction was taken. `Migrations.AddEmployeeNameUniqueness` adds a unique constraint on
+`(first_name, last_name)`, so the check is no longer a bare read-then-write race. The migration and
+what it taught are written up in [`MIGRATIONS.md`](MIGRATIONS.md).
+
+**This bakes in "no two employees may share a name"**, which remains a real modelling limitation
+rather than a solved problem — the first genuine John Smith collision is a schema change, not a bug
+fix. Revisit it when the directory holds real people.
+
+**Still outstanding:** nothing maps the constraint violation to a `409`. The handler's pre-check
+produces the 409 in the common case, but the losing side of a race gets a `500`, because
+`createEmployee` ends in `catch { throw error }`. `createDepartment` has the identical gap. See
+*What this did not fix* in [`MIGRATIONS.md`](MIGRATIONS.md) — the fix is to key on SQLSTATE `23505`
+in both handlers.
 
 ## 1.3 Decision — `PATCH` semantics
 
@@ -221,21 +234,20 @@ Two things worth knowing:
 `CreateEmployees` must run after `CreateDepartments`, which the current order in
 `Database.swift` already satisfies.
 
-**Gotcha worth verifying yourself:** SQLite does not enforce foreign keys unless
-`PRAGMA foreign_keys = ON` is set per connection, and it is off by default. Checking this stack,
-`sqlite-nio` does not compile with `SQLITE_DEFAULT_FOREIGN_KEYS`, and nothing in
-`fluent-sqlite-driver` appears to issue the pragma. So `.references(...)` is likely recorded in the
-schema but **not enforced at runtime** — you can probably insert an employee with a
-`department_id` that matches no department.
+**Resolved 2026-08-14.** This section used to carry a warning that SQLite does not enforce foreign
+keys unless `PRAGMA foreign_keys = ON` is set per connection — so `.references(...)` would have been
+recorded in the schema and silently not enforced, and you would have believed you had referential
+integrity without having it. That was the argument for moving to PostgreSQL first, which is now
+done; see [`POSTGRES.md`](POSTGRES.md).
 
-Do not take that on trust: write a test that tries exactly that insert and see whether it fails.
-If it succeeds, the referential integrity has to be enforced in the handler (look up the department
-before saving), and the constraint is documentation rather than a guarantee. This is a good thing
-to discover deliberately, because the same code on PostgreSQL would behave differently.
+The constraint will therefore be real the first time it exists. Prove it rather than assume it —
+write the test that inserts an employee with a `department_id` matching no department, and watch it
+**fail**. On the old stack it would have passed for the wrong reason, which is the single most
+useful thing this project has demonstrated about picking a database.
 
-Which is the argument for doing the database move first — see [`POSTGRES.md`](POSTGRES.md). On
-PostgreSQL the constraint is enforced the first time it exists, and that same test fails as it
-should rather than passing for the wrong reason.
+Note also that this is a new migration, not an edit to `CreateEmployees` — that one has already run
+here. Adding a `.required` column to a table that already holds rows needs care, and the sequence
+is covered in [`MIGRATIONS.md`](MIGRATIONS.md).
 
 ## 2.4 Decision — what `DELETE /departments/{id}` does with employees
 

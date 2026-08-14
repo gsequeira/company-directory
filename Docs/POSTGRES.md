@@ -11,7 +11,8 @@ later.
 
 Companion documents: [`LEARNING-PATH.md`](LEARNING-PATH.md) explains *why* this move is worth
 making early, [`API-DESIGN.md`](API-DESIGN.md) §2.3 is the foreign-key problem that motivates it,
-[`TOOLCHAIN.md`](TOOLCHAIN.md) covers which Swift compiles all this, and
+[`TOOLCHAIN.md`](TOOLCHAIN.md) covers which Swift compiles all this,
+[`MIGRATIONS.md`](MIGRATIONS.md) covers schema changes made *after* this move, and
 [`TESTING.md`](TESTING.md) holds the assertion conventions the new test harness must keep
 satisfying.
 
@@ -690,7 +691,9 @@ silently absorbed is now a hard error, which is the point of the exercise.
 
 **Migrations now run against a database that already has data.** Every migration so far has run
 against an empty schema, which is the easy case. The dev database persists across restarts, so the
-next migration you write will be the first real one. This is a feature.
+next migration you write will be the first real one. This is a feature — and it paid off
+immediately: see [`MIGRATIONS.md`](MIGRATIONS.md), where the very next migration failed on existing
+rows.
 
 ---
 

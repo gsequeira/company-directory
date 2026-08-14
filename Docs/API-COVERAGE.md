@@ -3,7 +3,10 @@
 A snapshot of how much of `Sources/foobar/openapi.yaml` the suite in
 `Tests/foobarTests/APIHandlerTests.swift` actually exercises, and what it misses.
 
-**Assessed:** 2026-08-14, at commit `15405a2` (14 tests passing).
+**Assessed:** 2026-08-14, at commit `15405a2` (14 tests passing). The declared-response tables below
+were re-checked after the move to PostgreSQL and the employee uniqueness migration; both left the
+counts unchanged, but each added a gap — see *Constraint violations surface as 500* and the note on
+`createEmployee`'s 409 below.
 
 This is a status document and goes out of date as tests are added — unlike
 [`TESTING.md`](TESTING.md), which holds the conventions for writing them, and
@@ -125,7 +128,31 @@ failure into parsing.
 It now returns the wrong status instead of dying, which is a real improvement — but nothing in the
 suite pins that behaviour, so there is no guard against a regression.
 
+## Constraint violations surface as `500`
+
+Added 2026-08-14, after `Migrations.AddEmployeeNameUniqueness` — see
+[`MIGRATIONS.md`](MIGRATIONS.md).
+
+Both create handlers detect duplicates with a pre-check query and return `409`. Both tables now
+also carry a unique constraint. But nothing maps a constraint violation to a response: each handler
+ends in `catch { throw error }`, so when the pre-check is *lost* — two concurrent requests both pass
+it, and the database rejects the second insert — the client gets a `500`, not the `409` the spec
+declares.
+
+This affects `createDepartment` and `createEmployee` equally. It is untested, and awkward to test,
+because provoking the race deliberately is not straightforward. The fix is to catch the violation
+on SQLSTATE `23505` in both handlers, at which point the pre-checks become an optimisation for the
+common case rather than the only thing between a client and a `500`.
+
+The existing duplicate-name tests do **not** cover this: they exercise the pre-check path, which
+returns `409` before the database is ever asked.
+
 ## Smaller gaps
+
+**`createEmployee`'s 409 is now backed by a constraint.** It previously was not — the check was a
+bare read-then-write with nothing behind it. That is fixed, but note the design consequence
+recorded in [`API-DESIGN.md`](API-DESIGN.md) §1.2: the schema now forbids two employees sharing a
+name, which is a modelling limitation rather than a resolved question.
 
 **Empty names are accepted.** `POST /api/departments` with `{"name":""}` returns `201` and creates
 a department with an empty name. The spec sets no `minLength`, so this is technically conformant,

@@ -107,19 +107,27 @@ orders.
 
 ## Two changes worth making now
 
-### Move to PostgreSQL earlier than feels necessary
+### Move to PostgreSQL earlier than feels necessary — **done 2026-08-14**
 
-This project already demonstrates why. Phase 2 will declare a foreign key from `employees` to
-`departments` — and SQLite very likely will not enforce it, because foreign keys require
-`PRAGMA foreign_keys = ON` per connection and it is off by default. You would write
-`.references("departments", "id")`, believe you have referential integrity, and not have it. See
-the migration section in [`API-DESIGN.md`](API-DESIGN.md).
+The argument was: Phase 2 declares a foreign key from `employees` to `departments`, and SQLite
+would very likely not have enforced it, because foreign keys need `PRAGMA foreign_keys = ON` per
+connection and it is off by default. You would have written `.references("departments", "id")`,
+believed you had referential integrity, and not had it.
 
 Postgres also brings real concurrent connections, actual transaction isolation, proper `numeric`
 for money, and a migration story against a database that already contains data — every migration
-run so far has been against an empty schema, which is the easy case.
+until then had run against an empty schema, which is the easy case.
 
-Better to discover the difference on a directory than on an orders table.
+Better to discover the difference on a directory than on an orders table. The full record is in
+[`POSTGRES.md`](POSTGRES.md), and it paid off faster than expected: the *very next* migration
+failed on existing rows, which is written up in [`MIGRATIONS.md`](MIGRATIONS.md).
+
+Worth noting what the move actually cost, because none of it was the driver swap. The real work
+was test isolation — in-memory SQLite gave every test its own database for free, and a shared
+server does not. And the sharpest lesson had nothing to do with either database: `configureServer`
+fetched its own database configuration, so the tests could not choose theirs, and the suite would
+have dropped the development schema while reporting success. Configuration a function reaches out
+and takes for itself cannot be varied by a caller. That generalises well beyond databases.
 
 ### Add phases that are not CRUD
 
@@ -358,9 +366,10 @@ retry.
 1. **Finish Phases 1 and 2** from [`API-DESIGN.md`](API-DESIGN.md) — employee CRUD, then the
    one-to-many relationship. This is the OpenAPI and Fluent fluency the rest depends on.
 2. **Add CI**, at any point. It is independent of everything else.
-3. **Move to PostgreSQL**, ideally before Phase 2's foreign key, so the constraint is real. Worked
-   out step by step in [`POSTGRES.md`](POSTGRES.md), and started ahead of step 2 — a CI workflow
-   written against SQLite would only be rewritten a week later.
+3. ~~**Move to PostgreSQL**~~ — **done 2026-08-14**, ahead of steps 1 and 2, because a CI workflow
+   written against SQLite would only have been rewritten a week later and Phase 2's foreign key
+   needed a database that enforces one. Recorded in [`POSTGRES.md`](POSTGRES.md), with schema
+   changes since in [`MIGRATIONS.md`](MIGRATIONS.md).
 4. **Phase 3: the transfer operation** — transactions and non-CRUD endpoint design.
 5. **Error middleware**, which also closes the `500` defect.
 6. **Phase 4: employment status** — state machines, transition-named endpoints, parameterised

@@ -1,13 +1,42 @@
 # Writing assertions in this test suite
 
-Conventions for the tests in `Tests/foobarTests/`. The suite is integration-style: every test boots a real
-`Application` with an in-memory SQLite database via `TestHelpers.withApplication`, drives it
-over HTTP with `application.sendRequest`, and asserts on the response.
+Conventions for the tests in `Tests/foobarTests/`. The suite is integration-style: every test boots
+a real `Application` via `TestHelpers.withApplication`, drives it over HTTP with
+`application.sendRequest`, and asserts on the response.
 
 This document covers *how* to write an assertion. For *what* is currently covered and what is
 missing, see [`API-COVERAGE.md`](API-COVERAGE.md); for the intended API shape and roadmap, see
 [`API-DESIGN.md`](API-DESIGN.md); for specific defects found and fixed, see
 [`ISSUES.md`](ISSUES.md).
+
+## Before writing a test: how isolation works now
+
+This changed on 2026-08-14 and it affects what you can assume.
+
+The suite used to run on an in-memory SQLite database, which gave every `Application` its own
+private schema for free. It now runs on the shared PostgreSQL server defined as `db-test` in
+`docker-compose.yml`, so **you must start it first**:
+
+```bash
+docker compose up -d --wait db-test
+swift test
+```
+
+Isolation now comes from two mechanisms that only work together:
+
+- **`.serialized`** on the `@Suite`, so only one test runs at a time.
+- **`autoRevert()`** in `withApplication`, which drops every table when a test finishes, so the
+  next one starts from an empty schema.
+
+Remove either and tests corrupt each other. Both carry comments saying so; leave them there.
+
+Two consequences for how you write tests. You can still assume an empty database at the start of
+every test, exactly as before — that assumption is now *earned* rather than free. And do not add
+`.serialized`-defeating tricks like spawning concurrent work that outlives the test body, because
+the revert will run underneath it.
+
+The mechanics, and the database-per-test upgrade available if the suite ever gets slow enough to
+need it, are in [`POSTGRES.md`](POSTGRES.md) step 6.
 
 ## The governing principle
 

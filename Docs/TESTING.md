@@ -4,6 +4,10 @@ Conventions for the tests in `Tests/foobarTests/`. The suite is integration-styl
 `Application` with an in-memory SQLite database via `TestHelpers.withApplication`, drives it
 over HTTP with `application.sendRequest`, and asserts on the response.
 
+This document covers *how* to write an assertion. For *what* is currently covered and what is
+missing, see [`API-COVERAGE.md`](API-COVERAGE.md); for specific defects found and fixed, see
+[`ISSUES.md`](ISSUES.md).
+
 ## The governing principle
 
 > An assertion earns its place when its absence would make a failure **invisible** or send you

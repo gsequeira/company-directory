@@ -40,7 +40,7 @@ struct APIHandler: APIProtocol {
                 {
                     let conflictResponse = Components.Schemas.ConflictError(
                         error: true,
-                        reason: "A department with the name '\(createRequest.name) already exists"
+                        reason: "A department with the name '\(createRequest.name)' already exists"
                     )
                     return .conflict(.init(body: .json(conflictResponse)))
                 }

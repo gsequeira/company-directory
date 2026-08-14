@@ -5,8 +5,9 @@ here are resolved; the file is kept as a record of what went wrong and why the g
 recurrence look the way they do. See [`TESTING.md`](TESTING.md) for the conventions these fixes
 follow.
 
-Scope note: this covers the test suite only. It is not a project-wide issue list, and does not
-track defects in `Sources/foobar`.
+Scope note: this covers defects in the test suite itself. It is not a project-wide issue list. For
+gaps in what the suite covers — including a live defect where malformed input returns `500` — see
+[`API-COVERAGE.md`](API-COVERAGE.md).
 
 | # | Location | Issue | Status |
 | --- | --- | --- | --- |

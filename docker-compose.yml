@@ -42,9 +42,11 @@ services:
       POSTGRES_DB: foobar_test
     ports:
       - "5433:5432"        # different host port so both servers run at once
-    # No volume: this database is disposable by design, recreated by migrations on
-    # every run. These flags trade crash durability for speed, which is the right
-    # trade for data that is worthless the moment the test finishes.
+    # No *named* volume. The image declares VOLUME /var/lib/postgresql, so Docker still
+    # creates an anonymous one — data survives a restart of this container, and is
+    # discarded when the container is removed. That is the intent: this database is
+    # rebuilt by migrations on every run. The flags below trade crash durability for
+    # speed, the right trade for data that is worthless the moment the test finishes.
     command: >-
       postgres -c fsync=off -c full_page_writes=off -c synchronous_commit=off
     healthcheck:

@@ -170,6 +170,11 @@ early and the first connection fails.
 **Two servers rather than two databases on one server.** It lets the test one run with durability
 off, and lets you throw it away without touching your development data.
 
+Note that `db-test` still gets a volume, just not a named one — the image declares
+`VOLUME /var/lib/postgresql`, so Docker creates an anonymous volume regardless. Its data survives a
+container restart and disappears when the container is removed. That is the intent; the difference
+from `db` is that nothing named is keeping it alive.
+
 Verify:
 
 ```bash
@@ -177,6 +182,48 @@ docker compose up -d --wait
 docker compose ps            # expect: both services, status "healthy"
 docker compose exec db psql -U foobar -d foobar -c 'SELECT version();'
 ```
+
+**That is not a connectivity test, and it is important to know why.** `docker compose exec` runs
+`psql` *inside* the container, over its Unix socket. It never touches host networking. A healthy
+container plus a working `exec` tells you the database is running and the role exists — and tells
+you nothing about whether anything on your Mac can reach it. Vapor connects over TCP to
+`localhost:5432`, which is a completely different path.
+
+Test the path the application actually uses:
+
+```bash
+PGPASSWORD=foobar psql -h localhost -p 5432 -U foobar -d foobar \
+  -tAc "select current_database() || ' @ ' || version();"
+```
+
+Expect a version string ending in `aarch64-unknown-linux-musl` (or `x86_64-…-linux-musl`). The
+`linux-musl` part is the proof: that is the Alpine container. A macOS-native server would report a
+Darwin build, and that difference is the whole point of the check.
+
+No `psql` on the host? Postgres.app leaves one at
+`/Applications/Postgres.app/Contents/Versions/latest/bin/psql` even when its server is stopped, and
+`brew install libpq` is the other source. Failing that, `docker run --rm postgres:18-alpine psql
+"postgresql://foobar:foobar@host.docker.internal:5432/foobar" -c 'select version();'` routes back
+out through the host, which exercises the same published port.
+
+### If that connection fails with `role "foobar" does not exist`
+
+The role exists — you are talking to a different server. Something else on the machine is bound to
+5432:
+
+```bash
+lsof -nP -iTCP:5432 -sTCP:LISTEN
+```
+
+Postgres.app and a Homebrew `postgresql` service both bind loopback (`127.0.0.1` and `[::1]`), while
+Docker binds the wildcard `*:5432`. macOS permits that pair to coexist, and for a connection to
+`localhost` **the more specific binding wins** — so the native server silently takes the connection
+and rejects it with SQLSTATE `28000`, because it has no `foobar` role. Nothing in the error mentions
+ports, so it reads like a credentials problem.
+
+Two fixes. Stop the native server, if you do not need it — which is the right call once this
+project's database lives in Docker. Or move the container to a free port (`"5434:5432"`) and set
+`DATABASE_PORT` to match, which is the better answer if you need both at once.
 
 Day-to-day commands:
 
@@ -187,6 +234,52 @@ Day-to-day commands:
 | `docker compose logs -f db` | Follow the server log — where connection errors explain themselves |
 | `docker compose down` | Stop; the dev volume survives |
 | `docker compose down -v` | Stop and **delete the dev data**. The "clean slate" button |
+
+## Where the data actually lives
+
+Not in the image. Worth untangling, because the distinction decides what is safe to delete.
+
+| | What it is | Lifetime |
+| --- | --- | --- |
+| **Image** — `postgres:18-alpine` | A read-only template pulled from Docker Hub. Identical on every machine, holds no data, never written to | Until you `docker rmi` it. Re-pulling changes nothing about your data |
+| **Container** — `foobar-db-1` | A running instance of that image, plus a thin writable layer | Dies with the container |
+| **Volume** — `foobar_foobar_db` | Where PostgreSQL's data directory actually is | Outlives the container. Only `docker compose down -v` removes it |
+
+```bash
+docker volume inspect foobar_foobar_db --format '{{.Name}} -> {{.Mountpoint}}'
+# foobar_foobar_db -> /var/lib/docker/volumes/foobar_foobar_db/_data
+```
+
+That mountpoint is a path **inside the Linux VM**, not on macOS. Compose prefixes the project
+directory name onto the volume declared in the file, which is why `foobar_db` becomes
+`foobar_foobar_db`.
+
+OrbStack additionally surfaces it on macOS at `~/OrbStack/docker/volumes/foobar_foobar_db`, so you
+can browse it. Do not edit anything there while the server is running — PostgreSQL owns those files
+and expects exclusive control. The supported way in is the network port.
+
+## Connecting a GUI client
+
+Postico, TablePlus, DataGrip and friends all work — this is an ordinary PostgreSQL server on a TCP
+port, and nothing about Docker changes how clients reach it.
+
+| Field | Development | Test |
+| --- | --- | --- |
+| Host | `localhost` | `localhost` |
+| Port | `5432` | `5433` |
+| User | `foobar` | `foobar` |
+| Password | `foobar` | `foobar` |
+| Database | `foobar` | `foobar_test` |
+
+**SSL must not be set to *require*.** The official image ships no certificates and runs with
+`ssl = off`; use *allow* or *prefer*. Confirm with:
+
+```bash
+PGPASSWORD=foobar psql -h localhost -p 5432 -U foobar -d foobar -tAc 'show ssl;'
+```
+
+Point a client at the test database by all means, but expect nothing to persist: the suite drops
+and recreates its tables on every run.
 
 ---
 
@@ -342,36 +435,82 @@ docker compose up -d --wait
 swift run
 ```
 
-Expect the migration log to show both migrations running, then the server binding. Then, in another
-terminal, prove the API still works end to end:
+Expect the migration log to show both migrations running, then the server binding:
 
-```bash
-curl -s -X POST localhost:8080/api/departments \
-  -H 'content-type: application/json' -d '{"name":"Engineering"}'
-curl -s localhost:8080/api/departments
+```
+[FluentKit] [Migrator] Starting prepare  migration=foobar.Migrations.CreateDepartments
+[FluentKit] [Migrator] Finished prepare  migration=foobar.Migrations.CreateDepartments
+[FluentKit] [Migrator] Starting prepare  migration=foobar.Migrations.CreateEmployees
+[FluentKit] [Migrator] Finished prepare  migration=foobar.Migrations.CreateEmployees
+[Vapor] Server started on http://127.0.0.1:8080
 ```
 
-**Now do the part that has actual learning value in it:** look at the schema Fluent generated.
+Then, in another terminal, prove the API still works end to end. HTTPie sends JSON by default, so
+`key=value` pairs become a JSON body with no quoting or `Content-Type` header to get right, and
+`:8080` expands to `localhost:8080`:
+
+```bash
+http POST :8080/api/departments name=Engineering
+http POST :8080/api/departments name="Customer Support"
+http :8080/api/departments                            # GET is the default
+```
+
+Add `--print=hb` to see the status line and headers alongside the body, and `--ignore-stdin` when
+running from a script or anywhere stdin is not a terminal — otherwise HTTPie assumes stdin is the
+request body and refuses to mix it with `key=value` items.
+
+Verified output, 2026-08-14:
+
+```
+$ http --print=hb POST :8080/api/departments name=Engineering
+HTTP/1.1 201 Created
+Content-Type: application/json; charset=utf-8
+
+{ "id" : 1, "name" : "Engineering" }
+
+$ http --print=hb POST :8080/api/departments name=Engineering
+HTTP/1.1 409 Conflict
+
+{ "error" : true, "reason" : "A department with the name 'Engineering' already exists" }
+```
+
+**Now the part with actual learning value in it:** look at the schema Fluent generated.
 
 ```bash
 docker compose exec db psql -U foobar -d foobar -c '\d departments'
 ```
 
-What to check, and why each one matters:
+## Result, verified 2026-08-14
 
-| Column | Expect | Why it matters |
-| --- | --- | --- |
-| `id` | `integer`, not null, `generated by default as identity` (or `nextval(...)`) | `.identifier(auto: true)` is free on SQLite, where any `INTEGER PRIMARY KEY` auto-increments. Postgres needs an explicit identity or sequence. If it is a plain `integer` with no default, inserts will fail on the second row and the migration needs fixing |
-| `inserted_at`, `updated_at` | `timestamp with time zone` | Fluent's `.datetime` maps to `TIMESTAMPTZ`. SQLite has no date type at all and stored these as text — this is the first time they have had a real type |
-| `name` | `character varying`/`text`, not null | Plus a unique index, listed under `Indexes:` |
+All three open questions came back clean. Recorded here so they do not have to be re-asked:
 
-The unique index is the one to confirm explicitly, because the comment at `Migrations.swift:11-14`
-says it is load-bearing for correctness — it is what stops the read-then-write race in
-`createDepartment` from producing duplicates:
-
-```bash
-docker compose exec db psql -U foobar -d foobar -c '\d departments' | grep -i unique
 ```
+                          Table "public.departments"
+   Column    |           Type           | Nullable |             Default
+-------------+--------------------------+----------+----------------------------------
+ id          | integer                  | not null | generated by default as identity
+ name        | text                     | not null |
+ inserted_at | timestamp with time zone |          |
+ updated_at  | timestamp with time zone |          |
+Indexes:
+    "departments_pkey" PRIMARY KEY, btree (id)
+    "uq:departments.name" UNIQUE CONSTRAINT, btree (name)
+```
+
+| Checked | Result | Why it mattered |
+| --- | --- | --- |
+| `id` | `generated by default as identity` ✓ | `.identifier(auto: true)` is free on SQLite, where any `INTEGER PRIMARY KEY` auto-increments. Postgres needs an explicit identity or sequence, and a bare `integer` with no default would have failed on the second insert. FluentPostgresDriver emits it correctly — no migration change needed |
+| `inserted_at`, `updated_at` | `timestamp with time zone` ✓ | Fluent's `.datetime` maps to `TIMESTAMPTZ`. SQLite has no date type and stored these as text; this is the first time they have had a real one |
+| `name` | `text`, not null, with `uq:departments.name` as a UNIQUE CONSTRAINT ✓ | The comment at `Migrations.swift:11-14` calls this load-bearing for correctness — it is what stops the read-then-write race in `createDepartment` from producing duplicates |
+
+`employees` is identical minus the unique constraint, and has no `department_id` — correct, that
+arrives in Phase 2.
+
+**One thing this run exposed.** The list endpoint returned rows in `id` order, but that is
+incidental. Postgres guarantees no ordering without an `ORDER BY`, and neither `listDepartments`
+nor `listEmployees` calls `.sort()`. It will hold until the first `PATCH` moves a row within the
+heap. See the ordering note under *Differences from SQLite that can bite* — the fix belongs in the
+handler, not the tests.
 
 **Checkpoint.** The application runs against Postgres. Tests are still broken. Commit here — this is
 a coherent, revertible state.

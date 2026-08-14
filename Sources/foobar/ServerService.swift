@@ -7,8 +7,14 @@ import OpenAPIVapor
 /// `Service` ready to be run by a `ServiceGroup`.
 ///
 /// The returned service is not started; calling this function has no effect on the network.
-func configureServer(_ application: Application) async throws -> Service {
-    try await configureDatabase(application: application)
+///
+/// - Parameter databaseConfiguration: Passed through to `configureDatabase(application:)`.
+///   Defaults to the environment-derived configuration; the test suite supplies its own.
+func configureServer(
+    _ application: Application,
+    databaseConfiguration: DatabaseConfigurationFactory? = nil
+) async throws -> Service {
+    try await configureDatabase(application: application, configuration: databaseConfiguration)
 
     routes(application)
 

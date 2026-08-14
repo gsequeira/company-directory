@@ -1,5 +1,4 @@
 import Fluent
-import FluentSQLiteDriver
 import Foundation
 import OpenAPIVapor
 import Testing
@@ -8,7 +7,10 @@ import VaporTesting
 
 @testable import foobar
 
-@Suite("API Handler Integration Tests")
+// `.serialized` is load-bearing, not a style choice. Every test shares one PostgreSQL server, and
+// `TestHelpers.withApplication` reverts all migrations when each finishes — so tests running in
+// parallel would drop each other's tables. See TestHelpers for the other half of the isolation.
+@Suite("API Handler Integration Tests", .serialized)
 struct APIHandlerIntegrationTests {
 
     // Tests for Department

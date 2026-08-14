@@ -3,13 +3,16 @@
 A step-by-step migration from the in-memory SQLite database to PostgreSQL running in Docker, with
 a verification checkpoint after every step.
 
-**Status as of 2026-08-14:** not started. This is step 3 of the sequence in
-[`LEARNING-PATH.md`](LEARNING-PATH.md), pulled forward ahead of CI because a CI workflow written
-against SQLite would be rewritten a week later.
+**Status as of 2026-08-14: steps 0–7 complete.** The application and the test suite both run on
+PostgreSQL, 14/14 tests pass in about 1.5 seconds, and the outputs recorded below are real rather
+than expected. This was step 3 of the sequence in [`LEARNING-PATH.md`](LEARNING-PATH.md), pulled
+forward ahead of CI because a CI workflow written against SQLite would have been rewritten a week
+later.
 
 Companion documents: [`LEARNING-PATH.md`](LEARNING-PATH.md) explains *why* this move is worth
 making early, [`API-DESIGN.md`](API-DESIGN.md) §2.3 is the foreign-key problem that motivates it,
-and [`TESTING.md`](TESTING.md) holds the assertion conventions the new test harness must keep
+[`TOOLCHAIN.md`](TOOLCHAIN.md) covers which Swift compiles all this, and
+[`TESTING.md`](TESTING.md) holds the assertion conventions the new test harness must keep
 satisfying.
 
 ## Why this is step 3 and not step 8
@@ -28,9 +31,10 @@ means writing Phase 2 twice.
 | --- | --- | --- |
 | `docker-compose.yml` | New. Two Postgres services. | None — new file |
 | `Package.swift` | `fluent-sqlite-driver` → `fluent-postgres-driver` | Low |
-| `Sources/foobar/Database.swift` | Driver swap, connection read from the environment | Low |
+| `Sources/foobar/Database.swift` | Driver swap, connection read from the environment, injectable configuration | Low |
+| `Sources/foobar/ServerService.swift` | Passes a database configuration through to `configureDatabase` | Low, but **do not skip** — see step 6a |
 | `Tests/foobarTests/TestHelpers.swift` | Loses free per-test isolation | **This is the real work** |
-| `Tests/foobarTests/APIHandlerTests.swift` | One trait added to `@Suite` | Low |
+| `Tests/foobarTests/APIHandlerTests.swift` | `.serialized` trait, unused import removed | Low |
 | `.gitignore` | Ignore `.env` | None |
 
 `Sources/foobar/APIHandler.swift`, `Models.swift` and `Migrations.swift` need **no changes**. Worth
@@ -118,9 +122,11 @@ services:
       POSTGRES_DB: foobar_test
     ports:
       - "5433:5432"        # different host port so both servers run at once
-    # No volume: this database is disposable by design, recreated by migrations on every
-    # run. These flags trade crash durability for speed, which is the right trade for data
-    # that is worthless the moment the test finishes.
+    # No *named* volume. The image declares VOLUME /var/lib/postgresql, so Docker still
+    # creates an anonymous one — data survives a restart of this container, and is
+    # discarded when the container is removed. That is the intent: this database is
+    # rebuilt by migrations on every run. The flags below trade crash durability for
+    # speed, the right trade for data that is worthless the moment the test finishes.
     command: >-
       postgres -c fsync=off -c full_page_writes=off -c synchronous_commit=off
     healthcheck:
@@ -531,21 +537,64 @@ and the `autoRevert()` at line 27 drops tables out from under whichever tests ar
 Ignore this and you get a suite that fails differently on every run — the worst possible failure
 mode, because it teaches you to distrust the tests rather than the code.
 
-## 6a — Serialize first
+## 6a — First, make the database injectable
 
-With 14 tests this costs seconds, and it is two small changes. Start here; do not build the clever
-version until the simple one is demonstrably too slow.
+**Check this before running `swift test` even once.** `configureServer` calls
+`configureDatabase(application:)` itself (`ServerService.swift:11`), so registering a database in
+`TestHelpers` before calling it achieves nothing — `configureDatabase` runs afterwards and its
+registration wins.
 
-`APIHandlerTests.swift:11`:
+Under SQLite that was invisible. The helper registered `.sqlite(.memory)`, then `configureDatabase`
+registered `.sqlite(.memory)` again over the top: the same thing twice, no observable difference,
+and the helper's line was pure redundancy nobody had reason to notice.
+
+With Postgres the default resolves to **the development database**, and `withApplication` calls
+`autoRevert()` when each test finishes. Run the suite in that state and it drops your development
+schema. Nothing warns you; the tests pass.
+
+So the first change is to production code, not test code — make the database an injectable
+parameter with the environment-derived one as its default:
+
+```swift
+// Database.swift
+func configureDatabase(
+    application: Application,
+    configuration: DatabaseConfigurationFactory? = nil
+) async throws {
+    do {
+        application.databases.use(try configuration ?? postgresConfiguration(), as: .psql)
+        // ...
+
+// ServerService.swift
+func configureServer(
+    _ application: Application,
+    databaseConfiguration: DatabaseConfigurationFactory? = nil
+) async throws -> Service {
+    try await configureDatabase(application: application, configuration: databaseConfiguration)
+    // ...
+```
+
+Both parameters default, so `Entrypoint.swift` is untouched. This is worth understanding as a
+design point rather than a workaround: configuration that a function reaches out and fetches for
+itself cannot be varied by a caller, and "the tests cannot choose their own database" is that
+problem showing up with real consequences.
+
+## 6b — Then serialize
+
+Two more changes. Start here; do not build the clever version until the simple one is demonstrably
+too slow.
+
+`APIHandlerTests.swift` — add the trait, and drop the now-unused `import FluentSQLiteDriver`:
 
 ```swift
 @Suite("API Handler Integration Tests", .serialized)
 ```
 
-`TestHelpers.swift` — change the import to `FluentPostgresDriver` and replace line 22:
+`TestHelpers.swift` — import `FluentPostgresDriver`, and pass the test database in explicitly
+instead of registering one that would be overwritten:
 
 ```swift
-application.databases.use(
+private static func databaseConfiguration() -> DatabaseConfigurationFactory {
     .postgres(
         configuration: .init(
             hostname: Environment.get("TEST_DATABASE_HOST") ?? "localhost",
@@ -555,25 +604,25 @@ application.databases.use(
             database: "foobar_test",
             tls: .disable
         )
-    ),
-    as: .psql
-)
+    )
+}
+
+// in withApplication, replacing the databases.use call:
+try await configureServer(application, databaseConfiguration: databaseConfiguration())
 ```
 
-Note the port defaults to **5433** — the `db-test` mapping from step 1 — and that both host and port
-are overridable, so CI can point elsewhere without a code change.
-
-The existing `autoRevert()`-then-`asyncShutdown()` structure still works, but its meaning has
-changed: it used to be tidy-up on a database that was about to evaporate anyway, and it is now the
-only thing giving the next test an empty schema. Worth saying so in the doc comment, which also
-needs its "fresh in-memory database" claim corrected.
-
-Distinct `TEST_DATABASE_*` names are deliberate. `Application.make(.testing)` loads `.env.testing`
-before `.env`, so reusing `DATABASE_HOST` for both would work but would depend on file-precedence
-rules to keep the test run off your development data. A wrong answer there truncates the wrong
+The port defaults to **5433**, the `db-test` mapping from step 1, and host and port are overridable
+so CI can point elsewhere without a code change. The database *name* is deliberately not
+overridable: a misconfigured port then fails to connect rather than reaching the development
 database.
 
-## 6b — Database per test, later
+The `autoRevert()`-then-`asyncShutdown()` structure is unchanged but its meaning is not. It used to
+be tidy-up on a database that was about to evaporate anyway; it is now the only thing giving the
+next test an empty schema. Along with `.serialized`, it is one of two halves of the isolation —
+remove either and tests interfere. Both deserve a comment saying so, and the helper's
+"fresh in-memory database" doc comment needs correcting.
+
+## 6c — Database per test, later
 
 When serialization starts to hurt, the upgrade is: generate a unique database name per test,
 `CREATE DATABASE` it through a connection to the maintenance `postgres` database, migrate, run the
@@ -593,8 +642,27 @@ docker compose up -d --wait db-test
 swift test
 ```
 
-Expect 14/14. If a test fails, check it against the differences below before assuming the migration
-broke something.
+**Result, 2026-08-14:** `Test run with 14 tests in 1 suite passed after 1.520 seconds.`
+
+Serialized execution costs so little at this size that step 6c stays firmly hypothetical. Revisit
+it when the suite is large enough for the wall-clock to matter, not before.
+
+Then prove the development database was not collateral damage — the whole point of 6a:
+
+```bash
+PGPASSWORD=foobar psql -h localhost -p 5432 -U foobar -d foobar \
+  -c '\dt' -c 'select * from departments;'
+```
+
+Its tables and rows should be exactly as you left them. The test database, by contrast, should have
+only `_fluent_migrations` left, every other table having been dropped by the final `autoRevert()`:
+
+```bash
+PGPASSWORD=foobar psql -h localhost -p 5433 -U foobar -d foobar_test -c '\dt'
+```
+
+If a test fails, check it against the differences below before assuming the migration broke
+something.
 
 ---
 

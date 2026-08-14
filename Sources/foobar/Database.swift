@@ -46,13 +46,18 @@ private func postgresConfiguration() throws -> DatabaseConfigurationFactory {
 
 /// Registers the PostgreSQL database, adds every migration, and runs them.
 ///
-/// Connection details come from the environment; see `postgresConfiguration()`. Data persists in
-/// the `foobar_db` Docker volume across restarts.
+/// - Parameter configuration: The database to use. Defaults to the environment-derived one built
+///   by `postgresConfiguration()`; the test suite passes its own so that it never touches the
+///   development database. Making this injectable is what stops `autoRevert()` in a test from
+///   dropping real tables.
 ///
 /// - Throws: `DatabaseError.migrationFailed` or `DatabaseError.configurationFailed`.
-func configureDatabase(application: Application) async throws {
+func configureDatabase(
+    application: Application,
+    configuration: DatabaseConfigurationFactory? = nil
+) async throws {
     do {
-        application.databases.use(try postgresConfiguration(), as: .psql)
+        application.databases.use(try configuration ?? postgresConfiguration(), as: .psql)
 
         application.migrations.add([
             Migrations.CreateDepartments(),

@@ -288,6 +288,38 @@ PGPASSWORD=foobar psql -h localhost -p 5432 -U foobar -d foobar -tAc 'show ssl;'
 Point a client at the test database by all means, but expect nothing to persist: the suite drops
 and recreates its tables on every run.
 
+### OrbStack only: reaching containers by name
+
+OrbStack gives every container a DNS name on the host, so you can connect without going through a
+published port at all. Two forms work, both verified 2026-08-14:
+
+```
+<service>.<project>.orb.local     db.foobar.orb.local        db-test.foobar.orb.local
+<container-name>.orb.local        foobar-db-1.orb.local      foobar-db-test-1.orb.local
+```
+
+**Use the container's port, not the host mapping.** This is the part that catches people:
+
+| Address | Port | Works |
+| --- | --- | --- |
+| `localhost` | `5432` / `5433` | Yes — the published mappings |
+| `db.foobar.orb.local` | `5432` | Yes |
+| `db-test.foobar.orb.local` | **`5432`** | Yes — *not* 5433 |
+| either `.orb.local` name | `5433` | **Connection refused** |
+
+`5433` only ever existed as a host-side mapping to avoid a collision on `5432`. Addressing the
+container directly bypasses that mapping entirely, and both containers listen on `5432` internally.
+
+```bash
+PGPASSWORD=foobar psql -h db-test.foobar.orb.local -p 5432 -U foobar -d foobar_test
+```
+
+**Never put these names in committed configuration.** They are an OrbStack feature — they do not
+exist on Docker Desktop, on Colima, on a CI runner, or on anyone else's machine. `Database.swift`,
+`.env.example` and any GitHub Actions workflow must keep using `localhost` and the published ports.
+Treat `.orb.local` as a convenience for ad-hoc connections from a GUI client or a one-off `psql`,
+and nothing more.
+
 ---
 
 # Step 2 — Swap the driver in `Package.swift`

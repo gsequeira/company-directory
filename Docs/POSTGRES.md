@@ -68,6 +68,9 @@ Architecture is worth a glance too — `docker info --format '{{.Architecture}}'
 this reports `aarch64`, and both images used here publish native arm64 variants, so nothing runs
 under emulation.
 
+Which Swift is running matters here too, and is pinned by `.swift-version` — see
+[`TOOLCHAIN.md`](TOOLCHAIN.md).
+
 Work on a branch so the escape hatch is one command:
 
 ```bash
@@ -215,6 +218,20 @@ swift package resolve
 
 The build will now fail, because `Database.swift:2` and `TestHelpers.swift:2` both still
 `import FluentSQLiteDriver`. That is expected and is the next two steps.
+
+**Run `swift package clean` before that build.** `resolve` deletes the `fluent-sqlite-driver`
+checkout but leaves its compiled `.swiftmodule` orphaned in `.build` — no longer in the graph, so
+nothing rebuilds it, and nothing deletes it. The stale import finds it anyway, and the resulting
+diagnostic points at the compiler rather than at your code:
+
+```
+error: compiled module was created by a newer version of the compiler:
+       .build/.../Modules/FluentSQLiteDriver.swiftmodule
+```
+
+`clean` discards compiled products while keeping `.build/checkouts`, so nothing is re-fetched. The
+full diagnosis is in [`TOOLCHAIN.md`](TOOLCHAIN.md); the short version is that an error naming a
+module you did not change, at a path inside `.build`, means clean before debugging.
 
 ---
 

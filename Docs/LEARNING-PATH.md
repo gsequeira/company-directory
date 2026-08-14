@@ -1,0 +1,221 @@
+# Learning path
+
+`foobar` is a learning project. The goal beyond it is being able to build substantial server-side
+Swift backends — an online shopping system is the working example. This document is about the
+distance between the two, and how to close it without abandoning this project.
+
+**Written:** 2026-08-14. See [`API-DESIGN.md`](API-DESIGN.md) for the concrete roadmap of this
+project's own phases; this document is the wider curriculum those phases sit inside.
+
+## What this project already teaches
+
+These transfer directly to a larger system and are worth being explicit about, because they are the
+parts most people skip:
+
+**Spec-first with generated types.** Adding three operations to `openapi.yaml` breaks the build
+until `APIHandler` implements them, because `APIProtocol` gains three requirements. The contract is
+enforced by the compiler rather than by discipline. That property is what makes this toolchain
+worth the friction, and it scales to a 200-endpoint API unchanged.
+
+**Integration tests that boot a real application.** `TestHelpers.withApplication` exercises
+routing, request decoding, Fluent and the handler together. The common alternative — unit-testing
+handlers against a mocked database — cannot catch a path-template mismatch or a decoding failure,
+both of which this project has already hit.
+
+**Verifying rather than assuming.** The bugs found here were found by running things: the `Int32`
+overflow that killed the process, the path parameter mismatch, the test that passed without ever
+entering the handler. That habit matters more than any specific framework knowledge.
+
+## The gap: CRUD is the easy 20%
+
+Everything built so far is *entity in, entity out*. A shopping backend's difficulty lives
+elsewhere, and this project will not surface it on its current trajectory.
+
+The concepts below are ordered by how much trouble they cause when missing.
+
+---
+
+### 1. Transactions and consistency
+
+Placing an order is: decrement inventory, create the order, create its line items, record payment —
+atomically, or not at all. A partial write leaves stock reserved for an order that does not exist.
+
+There are currently no transactions anywhere in this codebase, and it already contains this class
+of bug: `createDepartment` checks for an existing name and then inserts, so two concurrent requests
+can both pass the check. In a directory that is a duplicate row. In a shop it is selling the last
+item three times.
+
+**What to learn:** `database.transaction { db in ... }` in Fluent, and the habit of treating
+database constraints as the source of truth rather than pre-checks. A unique index rejects the
+second writer; an `if` statement in a handler does not.
+
+**Practise it here:** see Phase 3 below.
+
+### 2. Idempotency
+
+A payment request times out and the client retries. If the retry charges again, a customer has been
+billed twice for one order.
+
+The fix is that mutating operations accept an idempotency key — usually a client-supplied header —
+and the server records it, so a repeat of the same key returns the original result rather than
+performing the work again. This has to appear in the spec, which makes it a design concern rather
+than an implementation detail.
+
+**Why CRUD does not teach it:** `POST /departments` twice creating two departments is *correct*.
+`POST /payments` twice charging twice is a defect. Nothing in this project makes that distinction
+necessary.
+
+### 3. Money
+
+Never floating point. Use integer minor units (cents) or `Decimal`, consistently, from the database
+column through the OpenAPI schema to the JSON on the wire. `0.1 + 0.2 != 0.3` in binary floating
+point, and in a shopping cart that difference becomes a real discrepancy on a real invoice.
+
+In OpenAPI, `type: number` is a float. Money wants `type: integer` with the unit documented, or a
+string-encoded decimal. Decide once and apply it everywhere.
+
+**Why this bites:** it is silent. Nothing fails; the totals are just slightly wrong, and only in
+some cases.
+
+### 4. State machines
+
+An order is not a row you `PATCH`. It moves `pending → paid → shipped → delivered`, with
+transitions that are illegal (`delivered → pending`) and must be rejected.
+
+`PATCH /orders/{id}` accepting an arbitrary `status` field puts the rules in the client's hands.
+The better shape names the transition:
+
+```
+POST /orders/{orderId}/ship
+POST /orders/{orderId}/cancel
+```
+
+Each is an operation with its own preconditions, its own failure responses, and its own tests. This
+is a genuinely different modelling skill from CRUD, and most non-trivial domains need it.
+
+### 5. Authorization, distinct from authentication
+
+The `401` stub in `openapi.yaml` is authentication — *are you someone*. Shopping needs
+authorization — *can this someone read this order* — which is per-row rather than per-route.
+
+Middleware can answer the first question. The second has to be answered inside the handler, because
+it depends on the data being fetched. Getting this wrong is how systems leak other customers'
+orders.
+
+---
+
+## Two changes worth making now
+
+### Move to PostgreSQL earlier than feels necessary
+
+This project already demonstrates why. Phase 2 will declare a foreign key from `employees` to
+`departments` — and SQLite very likely will not enforce it, because foreign keys require
+`PRAGMA foreign_keys = ON` per connection and it is off by default. You would write
+`.references("departments", "id")`, believe you have referential integrity, and not have it. See
+the migration section in [`API-DESIGN.md`](API-DESIGN.md).
+
+Postgres also brings real concurrent connections, actual transaction isolation, proper `numeric`
+for money, and a migration story against a database that already contains data — every migration
+run so far has been against an empty schema, which is the easy case.
+
+Better to discover the difference on a directory than on an orders table.
+
+### Add a Phase 3 that is not CRUD
+
+You do not need a new domain to meet the hard concepts. In the existing model:
+
+> **Move all employees from one department to another, then delete the source department.**
+
+```yaml
+  /departments/{departmentId}/transfer:
+    post:
+      summary: Transfer all employees to another department
+      operationId: transferEmployees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                targetDepartmentId:
+                  type: integer
+                  format: int32
+                deleteSourceAfterTransfer:
+                  type: boolean
+              required: [targetDepartmentId]
+      responses:
+        "200": { description: The employees were transferred. }
+        "404": { description: Either department does not exist. }
+        "409": { description: The source and target are the same department. }
+```
+
+```swift
+try await database.transaction { db in
+    try await Models.Employee.query(on: db)
+        .filter(\.$department.$id == sourceId)
+        .set(\.$department.$id, to: targetId)
+        .update()
+
+    if request.deleteSourceAfterTransfer {
+        try await source.delete(on: db)
+    }
+}
+```
+
+That one operation gives you: a multi-entity write that must be atomic, a real transaction, an
+endpoint shape that is not CRUD, a bulk update rather than a per-row loop, and a failure mode you
+can test by making the delete fail and asserting the employees did *not* move.
+
+It is the cheapest available on-ramp to sections 1 and 4 above, and it fits the domain you already
+have.
+
+---
+
+## Supporting practices
+
+Ordered by value per minute invested.
+
+**Continuous integration.** There are 14 passing tests and nothing running them on push. A GitHub
+Actions workflow calling `swift build && swift test` is perhaps twenty lines and is the single
+highest-return item on this page. Add `swift format lint --strict` once the config exists — see the
+notes on that in the project's deferred work.
+
+**Error handling as a subsystem.** The `500`-on-malformed-input defect recorded in
+[`API-COVERAGE.md`](API-COVERAGE.md) is the symptom of not having one. One middleware that maps
+domain errors and decoding failures onto declared status codes, applied to every route, fixes it
+everywhere at once — including endpoints not yet written.
+
+**Observability.** `swift-log` is a dependency already and is barely used. Structured logging with
+a request ID threaded through each request is the baseline; `swift-metrics` and
+`swift-distributed-tracing` are the next steps. In a system with payments and background jobs, "why
+did this one order fail" is unanswerable without them.
+
+**Deployment.** Everything runs on one machine. A `Dockerfile`, configuration from the environment,
+and somewhere to put secrets are all prerequisites for anything real — and they change how the
+application is structured, so meeting them early avoids retrofitting.
+
+**API versioning.** Renaming `PageOfDepartments` to `DepartmentList` was free because nothing
+consumed the API. That will not be true a second time. Spec-first makes breaking changes visible,
+which is most of the battle, but a policy for how to evolve a live contract is still needed.
+
+**Background work and inbound webhooks.** Order confirmation emails and payment provider callbacks
+are both asynchronous. Vapor Queues covers the outbound side. Webhooks are the inbound side and
+bring their own requirements — signature verification and, again, idempotency, since providers
+retry.
+
+---
+
+## Suggested order
+
+1. **Finish Phases 1 and 2** from [`API-DESIGN.md`](API-DESIGN.md) — employee CRUD, then the
+   one-to-many relationship. This is the OpenAPI and Fluent fluency the rest depends on.
+2. **Add CI**, at any point. It is independent of everything else.
+3. **Move to PostgreSQL**, ideally before Phase 2's foreign key, so the constraint is real.
+4. **Phase 3: the transfer operation** — transactions and non-CRUD endpoint design.
+5. **Error middleware**, which also closes the `500` defect.
+6. **Then start the shopping domain**, with money, state machines and idempotency as deliberate
+   exercises rather than things discovered late.
+
+The honest summary: the approach is sound, and the rigour is already there. What is missing is not
+discipline but *exposure to problems that CRUD does not have*. Steps 3 to 5 above are the cheapest
+way to get that exposure without leaving a domain you already understand.

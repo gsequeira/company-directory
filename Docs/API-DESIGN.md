@@ -10,7 +10,8 @@ document explains the mechanics involved rather than only listing the work.
 
 Companion documents: [`API-COVERAGE.md`](API-COVERAGE.md) audits how well the *existing* surface is
 tested, [`TESTING.md`](TESTING.md) holds assertion conventions, [`ISSUES.md`](ISSUES.md) records
-defects found and fixed. This document is about what the API *should* contain.
+defects found and fixed, and [`LEARNING-PATH.md`](LEARNING-PATH.md) sets these phases in the wider
+context of building larger backends. This document is about what the API *should* contain.
 
 ## Where the API stands
 

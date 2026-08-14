@@ -17,3 +17,8 @@ DerivedData/
 
 # Credentials
 .netrc
+
+# Local environment
+.env
+.env.*
+!.env.example

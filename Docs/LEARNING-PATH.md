@@ -6,6 +6,7 @@ distance between the two, and how to close it without abandoning this project.
 
 **Written:** 2026-08-14. See [`API-DESIGN.md`](API-DESIGN.md) for the concrete roadmap of this
 project's own phases; this document is the wider curriculum those phases sit inside.
+Step 3 below has its own worked guide in [`POSTGRES.md`](POSTGRES.md).
 
 ## What this project already teaches
 
@@ -357,7 +358,9 @@ retry.
 1. **Finish Phases 1 and 2** from [`API-DESIGN.md`](API-DESIGN.md) — employee CRUD, then the
    one-to-many relationship. This is the OpenAPI and Fluent fluency the rest depends on.
 2. **Add CI**, at any point. It is independent of everything else.
-3. **Move to PostgreSQL**, ideally before Phase 2's foreign key, so the constraint is real.
+3. **Move to PostgreSQL**, ideally before Phase 2's foreign key, so the constraint is real. Worked
+   out step by step in [`POSTGRES.md`](POSTGRES.md), and started ahead of step 2 — a CI workflow
+   written against SQLite would only be rewritten a week later.
 4. **Phase 3: the transfer operation** — transactions and non-CRUD endpoint design.
 5. **Error middleware**, which also closes the `500` defect.
 6. **Phase 4: employment status** — state machines, transition-named endpoints, parameterised

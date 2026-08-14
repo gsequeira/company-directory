@@ -11,7 +11,9 @@ document explains the mechanics involved rather than only listing the work.
 Companion documents: [`API-COVERAGE.md`](API-COVERAGE.md) audits how well the *existing* surface is
 tested, [`TESTING.md`](TESTING.md) holds assertion conventions, [`ISSUES.md`](ISSUES.md) records
 defects found and fixed, and [`LEARNING-PATH.md`](LEARNING-PATH.md) sets these phases in the wider
-context of building larger backends. This document is about what the API *should* contain.
+context of building larger backends. [`POSTGRES.md`](POSTGRES.md) works through the database move
+that §2.3 below argues should happen before Phase 2. This document is about what the API *should*
+contain.
 
 ## Where the API stands
 
@@ -230,6 +232,10 @@ Do not take that on trust: write a test that tries exactly that insert and see w
 If it succeeds, the referential integrity has to be enforced in the handler (look up the department
 before saving), and the constraint is documentation rather than a guarantee. This is a good thing
 to discover deliberately, because the same code on PostgreSQL would behave differently.
+
+Which is the argument for doing the database move first — see [`POSTGRES.md`](POSTGRES.md). On
+PostgreSQL the constraint is enforced the first time it exists, and that same test fails as it
+should rather than passing for the wrong reason.
 
 ## 2.4 Decision — what `DELETE /departments/{id}` does with employees
 

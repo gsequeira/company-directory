@@ -1,0 +1,57 @@
+# Local PostgreSQL for development and testing. See Docs/POSTGRES.md.
+#
+# Any Docker Engine works — Docker Desktop, OrbStack, Colima. Nothing here is
+# specific to one of them.
+#
+#   docker compose up -d --wait            start both, block until accepting connections
+#   docker compose up -d --wait db-test    start only the test server
+#   docker compose down                    stop; the development data survives
+#   docker compose down -v                 stop and delete the development data
+
+services:
+  db:
+    # Pin the major version. A silent bump makes the named volume's data directory
+    # unreadable by the new binary, and the container refuses to start.
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: foobar
+      POSTGRES_PASSWORD: foobar
+      POSTGRES_DB: foobar
+    ports:
+      - "5432:5432"
+    # Mount /var/lib/postgresql, NOT /var/lib/postgresql/data. Postgres 18 moved PGDATA
+    # to a major-version-specific subdirectory (/var/lib/postgresql/18/docker) so that
+    # pg_upgrade --link works without crossing a mount boundary. The entrypoint refuses
+    # to start if it finds a mount at the old path, rather than silently ignoring it.
+    volumes:
+      - foobar_db:/var/lib/postgresql
+    # Not decoration: the container reports "running" well before Postgres accepts
+    # connections, because the image starts the server, runs init scripts, restarts
+    # it, and only then listens on the network port.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foobar -d foobar"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  db-test:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: foobar
+      POSTGRES_PASSWORD: foobar
+      POSTGRES_DB: foobar_test
+    ports:
+      - "5433:5432"        # different host port so both servers run at once
+    # No volume: this database is disposable by design, recreated by migrations on
+    # every run. These flags trade crash durability for speed, which is the right
+    # trade for data that is worthless the moment the test finishes.
+    command: >-
+      postgres -c fsync=off -c full_page_writes=off -c synchronous_commit=off
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foobar -d foobar_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  foobar_db:

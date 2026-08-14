@@ -59,9 +59,12 @@ func configureDatabase(
     do {
         application.databases.use(try configuration ?? postgresConfiguration(), as: .psql)
 
+        // Order matters and is append-only: Fluent runs new migrations in the order listed,
+        // recording each in `_fluent_migrations` so it is never run twice.
         application.migrations.add([
             Migrations.CreateDepartments(),
-            Migrations.CreateEmployees()
+            Migrations.CreateEmployees(),
+            Migrations.AddEmployeeNameUniqueness()
         ])
 
         try await application.autoMigrate()

@@ -105,6 +105,35 @@ deliberate decision with a wider blast radius.
 `platforms: [.macOS(.v26)]` and `swiftLanguageModes: [.v6]` are unaffected by a toolchain bump in
 either direction.
 
+## The split reaches the bundled tools too
+
+The two toolchains do not just differ in compiler build. They ship **different versions of the
+tools bundled with them**, and `swift-format` is the one this project will meet first:
+
+| Invocation | Toolchain | swift-format |
+| --- | --- | --- |
+| `swift format` (bare) | Xcode | **6.3.0** |
+| `~/.swiftly/bin/swift format` | swift.org 6.3.3 | **6.3.3** |
+| CI, inside `swift:6.3.3` | swift.org 6.3.3 | **6.3.3** |
+
+Note the direction is the reverse of what you might guess: Xcode's is the *older* one.
+
+**This does not carry the `.build` hazard.** `swift format` reads and writes source files; it runs
+no build. Verified by timestamping `.build` and linting a file — 0 files there were modified. The
+corruption in the appendix below came from `swift build`, not from the bundled tools.
+
+**And on this codebase the two versions currently agree**, which is worth knowing rather than
+fearing: run over all tracked `.swift` files with the project's intended settings, 6.3.0 and 6.3.3
+produce byte-identical output and the same 42 findings.
+
+The reason to use the swiftly path anyway is the failure mode *if* a future pair diverges, which is
+unusually hard to read: you format locally, CI lints with a different version and goes red, you
+re-run the formatter, it re-applies the same output, and nothing changes. The rule is therefore the
+same one that already applies to `swift build` — invoke the toolchain by path — and it now has two
+reasons behind it rather than one.
+
+See issue #6 for the formatting work itself.
+
 ## Relationship to CI
 
 `.swift-version` is the contract between a development machine and the runner. When CI is added,

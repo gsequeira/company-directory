@@ -141,6 +141,9 @@ point is not to make any of them stop finding things.
 | Linux container, when the risk surface moves | see below | 92s cold, 1–9s warm | Glibc and Foundation divergence, conditional imports, filesystem and process APIs |
 | CI, every push | automatic | minutes | All of the above, in a clean environment, on the record |
 
+[`CI.md`](CI.md) is the playbook for the third layer: how to watch a run, read a failure, reproduce
+it locally, and what goes wrong.
+
 ## The middle layer
 
 You can run the Linux check without waiting on GitHub:

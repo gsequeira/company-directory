@@ -32,7 +32,7 @@ document and the row should link to it instead.
 
 | # | Issue | What landed | Where the lesson lives | PR |
 | --- | --- | --- | --- | --- |
-| 1 | Add CI to run the test suite on push | `.github/workflows/ci.yml` — Linux job on `swift:6.3.3` with PostgreSQL 18 as a service container, 14/14 green on amd64 | [`WORKFLOW.md`](WORKFLOW.md) → *Where the checks run*; [`POSTGRES.md`](POSTGRES.md) → *What this unlocks* | [#27](https://github.com/sequeiralabs/foobar/pull/27) |
+| 1 | Add CI to run the test suite on push | `.github/workflows/ci.yml` — Linux job on `swift:6.3.3` with PostgreSQL 18 as a service container, 14/14 green on amd64 | [`CI.md`](CI.md) (the playbook); [`WORKFLOW.md`](WORKFLOW.md) → *Where the checks run*; [`POSTGRES.md`](POSTGRES.md) → *What this unlocks* | [#27](https://github.com/sequeiralabs/foobar/pull/27) |
 
 ## Findings that outlived their issue
 

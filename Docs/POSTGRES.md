@@ -735,7 +735,8 @@ rows.
 whose `department_id` matches no department, and watch it *fail*, where SQLite would have let it
 through. Write that test before writing the relationship.
 
-**Next:** CI. **Done 2026-08-15** — `.github/workflows/ci.yml`, issue #1.
+**Next:** CI. **Done 2026-08-15** — `.github/workflows/ci.yml`, issue #1. The playbook for running
+it is [`CI.md`](CI.md).
 
 A GitHub Actions workflow declares Postgres in its own `services:` block, not from
 `docker-compose.yml`. The gotchas there are that a job running in a `container:` reaches the service

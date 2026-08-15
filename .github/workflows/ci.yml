@@ -1,0 +1,93 @@
+# Builds and runs the test suite on Linux against a real PostgreSQL server.
+#
+# Why Linux and not macOS: GitHub's macOS runners have no Docker daemon and cannot use
+# `services:` at all. A macOS job could not start PostgreSQL, and this suite needs one —
+# it has been an integration suite since the move off in-memory SQLite (Docs/POSTGRES.md).
+#
+# Why a `container:` rather than installing a toolchain on the runner: the official Swift
+# image *is* the swift.org toolchain, the same distribution swiftly installs locally
+# (Docs/TOOLCHAIN.md). Nothing has to be downloaded, unpacked or trusted at run time.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Without the `branches:` filter above, a push to a PR branch would trigger both events and
+# run the job twice for one change. This way `push` covers main and `pull_request` covers
+# everything on its way there.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The default token is broader than this job needs; it only ever reads the checkout.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The full image, NOT `swift:6.3.3-slim` — the slim variants ship the runtime only and
+    # have no compiler. Keep this tag in step with `.swift-version`; the step below fails
+    # the build if the two drift apart.
+    container: swift:6.3.3
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: foobar
+          POSTGRES_PASSWORD: foobar
+          POSTGRES_DB: foobar_test
+        # No `ports:` mapping. A job running inside a container reaches a service by its
+        # name on the *container* port, over the network Actions creates for them both.
+        # `ports:` plus `localhost` is what a job running directly on the runner needs.
+        options: >-
+          --health-cmd "pg_isready -U foobar -d foobar_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
+    env:
+      # `foobar_test` is hardcoded in TestHelpers on purpose and is not overridable — a
+      # misconfigured host then fails to connect rather than reaching a database whose
+      # tables autoRevert() would proceed to drop.
+      TEST_DATABASE_HOST: postgres
+      TEST_DATABASE_PORT: 5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify the toolchain matches .swift-version
+        run: |
+          pinned="$(tr -d '[:space:]' < .swift-version)"
+          actual="$(swift --version | head -1 | awk '{print $3}')"
+          echo "pinned in .swift-version: $pinned"
+          echo "running in container:     $actual"
+          if [ "$pinned" != "$actual" ]; then
+            echo "::error::Toolchain drift. .swift-version pins $pinned but this job runs $actual." \
+                 "Update the 'container:' tag in .github/workflows/ci.yml to swift:$pinned."
+            exit 1
+          fi
+
+      # Only the dependency cache, deliberately not `.build`. A stale `.build` written by a
+      # different compiler produces "compiled module was created by a newer version of the
+      # compiler" — a failure this project has already paid for once locally, and a bad one
+      # to reintroduce in an environment you cannot poke at. Cache correctness first;
+      # revisit build caching once there is a cold-run baseline to compare against.
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: swiftpm-${{ runner.os }}-
+
+      # `swift test` builds the executable target too, so there is no separate build step.
+      - name: Run tests
+        run: swift test

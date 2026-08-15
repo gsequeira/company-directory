@@ -110,23 +110,33 @@ Suggested short names where the derived one is too long:
 
 # Order
 
-Most issues are independent. Six carry a dependency note in the issue body itself; those are the
-ones to respect:
+Most issues are independent. Those that are not carry a dependency note in the issue body itself;
+those are the ones to respect:
 
 | Do first | Before | Why |
 | --- | --- | --- |
 | #2 | #14 | The invalid-input tests land red until the `400` mapping exists |
 | #3 | Any new list-asserting test | Current ordering is accidental; write tests against it and the luck gets baked into assertions |
 | #10 | #9 | `UpdateEmployeeRequest`'s shape *is* the PATCH decision |
+| #7, #8 | #9 | #9 mirrors the department handlers. Copy them unfixed and it is six sites to correct, not three |
 | #19, #20 | #18 | Both change the migration and the model |
 | #17 | #18 | Phase 2 changes that code's correctness — the test turns it into a visible failure |
 | #18 | #21 | Nothing to narrow until the foreign key exists |
+
+Two of these are cost dependencies rather than hard ones — #7 and #8 before #9, and declaring `400`
+on the new operations while #9's spec is open rather than making #2 retrofit six of them. Nothing
+breaks if they are ignored; the same work simply gets done twice.
+
+**#6 is a scheduling constraint, not an ordering one.** `swift format --in-place` touches nearly
+every line, so it conflicts with any large branch that is open at the time. Run it on a quiet tree
+— before starting Phase 1, or after Phase 2 merges. Not in between.
 
 **Coverage work last**, deliberately: Phase 2 changes the `Employee` schema, so employee tests
 written before it get rewritten. #13 is the exception — department-only, so Phase 2 cannot
 invalidate it.
 
-Suggested first three, all cheap and independent: **#1**, then **#2**, then **#3**.
+Suggested next, now that #1 is done: **#7** and **#8** (small, and #9 copies their code), then
+**#10**, then **#9**.
 
 ---
 

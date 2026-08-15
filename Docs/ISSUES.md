@@ -9,6 +9,10 @@ Scope note: this covers defects in the test suite itself. It is not a project-wi
 gaps in what the suite covers — including a live defect where malformed input returns `500` — see
 [`API-COVERAGE.md`](API-COVERAGE.md).
 
+**The numbering here is local to this file and predates the move to GitHub Issues.** "Issue 1" and
+"Issue 2" below are test-suite defects and have nothing to do with GitHub #1 and #2. For GitHub
+issues and what has been resolved, see [`ISSUE-LOG.md`](ISSUE-LOG.md).
+
 | # | Location | Issue | Status |
 | --- | --- | --- | --- |
 | 1 | `testCreateEmployeeDuplicateName` | Assertion checked wording the handler never produced | **Resolved** |

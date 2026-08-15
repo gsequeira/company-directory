@@ -8,6 +8,8 @@ and what "done" means for each kind of issue.
 Outstanding work lives in **GitHub Issues** on `sequeiralabs/foobar`; this repository's `Docs/`
 hold the reasoning. Read the doc for *why*, the issue for *whether it is done*, and do not copy
 prose between them — that is how one of them goes quietly stale.
+[`ISSUE-LOG.md`](ISSUE-LOG.md) is the index of what has been finished and which document absorbed
+each lesson.
 
 ## The short version
 
@@ -258,4 +260,8 @@ After merging:
 
 - [ ] Squash-merge, delete the branch.
 - [ ] `git switch main && git pull`.
+- [ ] Add a row to [`ISSUE-LOG.md`](ISSUE-LOG.md). A row, not a paragraph — if it wants to be a
+      paragraph, that belongs in the topic document and the row should link to it.
+- [ ] Anything learned that belongs to a *different* issue: comment on that issue, and log it under
+      *Findings that outlived their issue*. This is where most knowledge gets lost.
 - [ ] Check whether the issue unblocked another — the dependency notes cut both ways.

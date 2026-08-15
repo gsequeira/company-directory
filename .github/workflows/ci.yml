@@ -31,7 +31,10 @@ jobs:
   test:
     name: Build and test (Linux)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The first cold run took 12m37s, almost all of it one 682s compile on a 2-core runner —
+    # roughly seven times the 92s the same build takes locally. 20 minutes left too little
+    # headroom for a busy runner to turn a healthy build red for no reason.
+    timeout-minutes: 30
 
     # The full image, NOT `swift:6.3.3-slim` — the slim variants ship the runtime only and
     # have no compiler. Keep this tag in step with `.swift-version`; the step below fails
@@ -62,7 +65,7 @@ jobs:
       TEST_DATABASE_PORT: 5432
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify the toolchain matches .swift-version
         run: |
@@ -82,7 +85,7 @@ jobs:
       # to reintroduce in an environment you cannot poke at. Cache correctness first;
       # revisit build caching once there is a cold-run baseline to compare against.
       - name: Cache SwiftPM dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/org.swift.swiftpm
           key: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}

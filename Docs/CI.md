@@ -159,6 +159,26 @@ Until a branch protection rule requires it, CI only reports. To make it binding,
 Rename the job and the rule silently stops matching, which looks exactly like a repository with no
 protection at all.
 
+**Not done, and blocked on the account plan rather than on configuration.** Attempted 2026-08-15;
+both APIs refuse:
+
+```
+GET /repos/sequeiralabs/foobar/rulesets                   403
+GET /repos/sequeiralabs/foobar/branches/main/protection   403
+"Upgrade to GitHub Pro or make this repository public to enable this feature."
+```
+
+Branch protection and rulesets are unavailable on **private** repositories on the Free plan, so
+this is a decision — pay, publish, or accept it — before it is a task. Tracked as issue #28, which
+also records the settings worth getting right when the time comes, including why required
+approvals must be **0** on a solo repository: GitHub does not let you approve your own pull
+request, so any other value makes merging impossible.
+
+**Current state, therefore: CI reports and does not gate.** The practical loss is smaller than it
+sounds here, because [`WORKFLOW.md`](WORKFLOW.md) already routes work through a pull request — you
+would have to override your own documented routine to break `main`. It is worth knowing that is
+what protects the branch today, rather than assuming a rule does.
+
 ---
 
 # Part 3 — Anatomy of the workflow
@@ -270,7 +290,7 @@ Nothing here handles secrets yet, and that is worth preserving deliberately.
 
 | Item | Why | Status |
 | --- | --- | --- |
-| Branch protection requiring the check | Turns a report into a gate. The single highest-value follow-up | Not done |
+| Branch protection requiring the check | Turns a report into a gate. The single highest-value follow-up | Issue #28 — blocked on the plan, not on effort |
 | `.build` caching keyed on toolchain version | 682s of every run is cold compile | Not filed |
 | `swift format lint --strict` step | The image already ships swift-format 6.3.3 | Waiting on #6 |
 | `--warnings-as-errors` | Would currently fail on the unused-result warning in `TestHelpers.swift:47` | Blocked on that fix |

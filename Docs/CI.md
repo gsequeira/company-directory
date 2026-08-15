@@ -174,6 +174,11 @@ also records the settings worth getting right when the time comes, including why
 approvals must be **0** on a solo repository: GitHub does not let you approve your own pull
 request, so any other value makes merging impossible.
 
+**Decided 2026-08-15: stay private on the Free plan and leave `main` unprotected.** Pro would buy
+exactly one thing here — protection on a private repository — and the usage figures below show it
+buys nothing on minutes or storage. Revisit when a second contributor appears, since "the routine
+protects `main`" only ever protected it from *your own* mistakes.
+
 **Current state, therefore: CI reports and does not gate.** The practical loss is smaller than it
 sounds here, because [`WORKFLOW.md`](WORKFLOW.md) already routes work through a pull request — you
 would have to override your own documented routine to break `main`. It is worth knowing that is
@@ -263,11 +268,34 @@ incompatible modules and the failure looks like a compiler bug.
 
 ## Cost and quota
 
-This repository is **private**, so Actions minutes are metered rather than free-for-public. A run
-is roughly twelve minutes on a 2-core Linux runner, nearly all of it one cold compile — about seven
-times what the same build takes locally. Two mitigations are already in place: the `concurrency`
-block cancels superseded runs when you push twice in quick succession, and only the SwiftPM
-dependency cache is restored.
+This repository is **private on the Free plan**, so Actions minutes are metered rather than
+free-for-public. A run is roughly twelve minutes on a 2-core Linux runner, nearly all of it one
+cold compile — about seven times what the same build takes locally. Linux bills at 1×; macOS
+runners bill at **10×**, which is a second reason this job is not on one.
+
+Measured 2026-08-15, after the six runs it took to land #1:
+
+| Resource | Measured | Free allowance |
+| --- | --- | --- |
+| Minutes | ~13 billed per full run; ~45 for all of #1 | 2,000 / month |
+| Artifacts | none — this workflow uploads nothing | 500 MB shared with logs |
+| Logs | 135 KB compressed per run | as above |
+| Actions cache | 413 MB | **10 GB, a separate allowance** |
+
+Neither limit is close. The whole 26-issue backlog is projected at 900–1,000 minutes *in total*,
+under half of a single month's allowance; exceeding it would take about 166 runs a month, or 5.5
+every day. Filling 500 MB would take roughly 3,700 runs of logs, which expire after 90 days anyway.
+
+**The cache figure is the one that misleads.** 413 MB looks alarming next to a 500 MB limit and is
+unrelated to it: the Actions cache has its own 10 GB per-repository allowance, is free, and is
+evicted least-recently-used. The 500 MB covers artifacts and logs.
+
+Two mitigations are already in place: the `concurrency` block cancels superseded runs when you push
+twice in quick succession, and only the SwiftPM dependency cache is restored. The lever in reserve
+is `.build` caching, which would cut most of the 682s compile.
+
+What would change the arithmetic: adding a build matrix (multiplies minutes directly), or uploading
+artifacts such as a coverage report per run (which is what actually consumes the 500 MB).
 
 ## Security notes, for when this grows
 

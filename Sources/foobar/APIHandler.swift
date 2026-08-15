@@ -13,9 +13,7 @@ struct APIHandler: APIProtocol {
     func listDepartments(_ input: Operations.ListDepartments.Input) async throws -> Operations.ListDepartments.Output {
         let departments = try await Models.Department.query(on: database).all()
 
-        let departmentComponents = departments.map { department in
-            Components.Schemas.Department(id: Int(department.id!), name: department.name)
-        }
+        let departmentComponents = try departments.map(Components.Schemas.Department.init)
 
         let departmentList = Components.Schemas.DepartmentList(departments: departmentComponents)
 
@@ -66,10 +64,7 @@ struct APIHandler: APIProtocol {
                 )
             }
 
-            let departmentResponse = Components.Schemas.Department(
-                id: Int(newDepartment.id!),
-                name: newDepartment.name,
-            )
+            let departmentResponse = try Components.Schemas.Department(newDepartment)
 
             return .created(.init(body: .json(departmentResponse)))
         }
@@ -82,10 +77,7 @@ struct APIHandler: APIProtocol {
             return .notFound(.init())
         }
 
-        let departmentResponse = Components.Schemas.Department(
-            id: Int(department.id!),
-            name: department.name
-        )
+        let departmentResponse = try Components.Schemas.Department(department)
 
         return .ok(.init(body: .json(departmentResponse)))
     }
@@ -101,7 +93,7 @@ struct APIHandler: APIProtocol {
 
             if try await Models.Department.query(on: database)
                 .filter(\.$name == updateRequest.name)
-                .filter(\.$id != existingDepartment.id!)
+                .filter(\.$id != (try existingDepartment.requireID()))
                 .first() != nil
             {
                 let conflictResponse = Components.Schemas.ConflictError(
@@ -130,10 +122,7 @@ struct APIHandler: APIProtocol {
                 )
             }
 
-            let departmentResponse = Components.Schemas.Department(
-                id: Int(existingDepartment.id!),
-                name: existingDepartment.name
-            )
+            let departmentResponse = try Components.Schemas.Department(existingDepartment)
 
             return .ok(.init(body: .json(departmentResponse)))
         }
@@ -154,13 +143,7 @@ struct APIHandler: APIProtocol {
     func listEmployees(_ input: Operations.ListEmployees.Input) async throws -> Operations.ListEmployees.Output {
         let employees = try await Models.Employee.query(on: database).all()
 
-        let employeeComponents = employees.map { employee in
-            Components.Schemas.Employee(
-                id: Int(employee.id!),
-                firstName: employee.firstName,
-                lastName: employee.lastName
-            )
-        }
+        let employeeComponents = try employees.map(Components.Schemas.Employee.init)
 
         let employeeList = Components.Schemas.EmployeeList(employees: employeeComponents)
 
@@ -208,11 +191,7 @@ struct APIHandler: APIProtocol {
                 )
             }
 
-            let employeeResponse = Components.Schemas.Employee(
-                id: Int(newEmployee.id!),
-                firstName: newEmployee.firstName,
-                lastName: newEmployee.lastName
-            )
+            let employeeResponse = try Components.Schemas.Employee(newEmployee)
 
             return .created(.init(body: .json(employeeResponse)))
         }

@@ -8,6 +8,8 @@ and what "done" means for each kind of issue.
 Outstanding work lives in **GitHub Issues** on `sequeiralabs/foobar`; this repository's `Docs/`
 hold the reasoning. Read the doc for *why*, the issue for *whether it is done*, and do not copy
 prose between them — that is how one of them goes quietly stale.
+[`ISSUE-LOG.md`](ISSUE-LOG.md) is the index of what has been finished and which document absorbed
+each lesson.
 
 ## The short version
 
@@ -34,8 +36,8 @@ left the build deliberately broken for two commits while the driver swap landed 
 that used it. That is fine on a branch and unacceptable on `main`. When the Postgres 18 volume path
 and then an orphaned `.swiftmodule` both went wrong, `git switch main` was a working escape hatch.
 
-**The reason gets stronger once #1 lands.** Today, solo and with no CI, a branch buys the escape
-hatch and little else — there is no reviewer. Once CI runs, a pull request is where the checks run
+**The reason got stronger when #1 landed.** Solo and with no CI, a branch bought the escape hatch
+and little else — there is no reviewer. Now that CI runs, a pull request is where the checks run
 *before* `main` is affected rather than after. Add a branch protection rule requiring the check and
 `main` stops being breakable by accident.
 
@@ -128,6 +130,72 @@ Suggested first three, all cheap and independent: **#1**, then **#2**, then **#3
 
 ---
 
+# Where the checks run
+
+Three layers, each catching something the one before it cannot. They are not redundant, and the
+point is not to make any of them stop finding things.
+
+| Layer | Command | Cost | Catches |
+| --- | --- | --- | --- |
+| macOS, every change | `swift test` | ~0.7s warm | Everything ordinary |
+| Linux container, when the risk surface moves | see below | 92s cold, 1–9s warm | Glibc and Foundation divergence, conditional imports, filesystem and process APIs |
+| CI, every push | automatic | minutes | All of the above, in a clean environment, on the record |
+
+## The middle layer
+
+You can run the Linux check without waiting on GitHub:
+
+```bash
+docker compose up -d --wait db-test
+docker run --rm --network foobar_default \
+  -e TEST_DATABASE_HOST=db-test -e TEST_DATABASE_PORT=5432 \
+  -v "$PWD":/src -w /src -v /tmp/foobar-linux-build:/build \
+  swift:6.3.3 swift test --scratch-path /build
+```
+
+Two details carry the weight:
+
+- **`--scratch-path` is not tidiness.** Without it the container writes Linux modules into your
+  macOS `.build`, which is the corruption in [`TOOLCHAIN.md`](TOOLCHAIN.md) with an extra
+  dimension added. Point it at a directory outside the repository.
+- **`--network foobar_default`** puts the build container on the same network as the compose
+  services, so `db-test:5432` resolves — the *container* port, not the published 5433. That is
+  structurally identical to what a GitHub service container provides, which makes this the honest
+  rehearsal for CI rather than an approximation of it.
+
+Measured on this project: 92s for the first build, then 1–9s while the scratch path persists. So
+this is not the slow fallback it sounds like — but do not run it on every commit. It catches a
+class of problem that fires rarely, and paying 92s for it routinely is how the habit dies. Run it
+when you add a dependency, touch Foundation, filesystem, process or date APIs, or bump the
+toolchain.
+
+## Why there is no pre-push hook
+
+A hook running `swift test` before every push is the obvious next idea, and it is a trap here.
+
+**The suite depends on external state.** It needs the `db-test` container running. That was
+demonstrated accidentally while setting up #1: the container stopped between two runs and the next
+run produced 14 failures, every one of them `SocketAddressError.UnknownHost … for host db-test`.
+Nothing was wrong with the code. A hook would have blocked that push for a reason unrelated to the
+change, and `git push --no-verify` becomes muscle memory after about the second time — leaving a
+hook that blocks nothing and a habit of stepping around safety checks.
+
+**`.git/hooks` is not versioned.** It is invisible machine-local behaviour, so the guarantee
+silently does not exist on a second machine or for anyone else.
+
+**Branching already covers it.** A bad push lands on a branch, CI goes red, `main` is untouched.
+The hook defends a door that is already locked.
+
+The argument *for* a hook is usually that CI should be reserved for Linux and reproducibility
+rather than "catching things you would have caught anyway". That inverts the point. CI catching
+something you could have caught locally is the redundancy working; its value is being unskippable
+and visible, and a hook is neither. If you want automation, prefer an explicit committed
+`scripts/check`, or a **pre-commit** hook running only sub-second checks such as
+`swift format lint`, managed by a versioned runner rather than raw `.git/hooks` — and not before
+#6 has cleared its findings.
+
+---
+
 # What "done" means
 
 It differs by label, and getting this wrong is how an issue gets closed while the problem survives.
@@ -192,4 +260,8 @@ After merging:
 
 - [ ] Squash-merge, delete the branch.
 - [ ] `git switch main && git pull`.
+- [ ] Add a row to [`ISSUE-LOG.md`](ISSUE-LOG.md). A row, not a paragraph — if it wants to be a
+      paragraph, that belongs in the topic document and the row should link to it.
+- [ ] Anything learned that belongs to a *different* issue: comment on that issue, and log it under
+      *Findings that outlived their issue*. This is where most knowledge gets lost.
 - [ ] Check whether the issue unblocked another — the dependency notes cut both ways.

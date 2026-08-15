@@ -735,19 +735,42 @@ rows.
 whose `department_id` matches no department, and watch it *fail*, where SQLite would have let it
 through. Write that test before writing the relationship.
 
-**Next:** CI. A GitHub Actions workflow declares Postgres in its own `services:` block, not from
+**Next:** CI. **Done 2026-08-15** — `.github/workflows/ci.yml`, issue #1.
+
+A GitHub Actions workflow declares Postgres in its own `services:` block, not from
 `docker-compose.yml`. The gotchas there are that a job running in a `container:` reaches the service
 at hostname `postgres` on port **5432** (the container port, not a mapped one) with no `ports:`
 mapping at all, while a job running directly on the runner needs `ports:` and `localhost`; and that
 **macOS runners have no Docker daemon and cannot use `services:` at all**, so this has to be a Linux
 job.
 
-Which raises the one thing to check early, since this project has only ever been built on macOS:
+Which raised the one thing to check early, since this project had only ever been built on macOS:
 
 ```bash
-docker run --rm -v "$PWD":/src -w /src swift:6.3 swift build
+docker run --rm -v "$PWD":/src -w /src -v /tmp/foobar-linux-build:/build \
+  swift:6.3.3 swift build --scratch-path /build
 ```
 
-The `platforms: [.macOS(.v26)]` line in `Package.swift` is ignored on Linux and will not block the
-build. Vapor and Fluent are Linux-first, so this is expected to pass — but the first CI run is a bad
-place to find out otherwise.
+The `platforms: [.macOS(.v26)]` line in `Package.swift` is ignored on Linux and does not block the
+build. Vapor and Fluent are Linux-first, so this was expected to pass — but the first CI run is a
+bad place to find out otherwise.
+
+**It passed**, and so did `swift test`, 14/14, against `db-test` reached over the compose network.
+No conditional imports were needed anywhere; there is no `Darwin` or `FoundationNetworking` in this
+codebase. The full image also ships `swift-format` 6.3.3, so the lint step in #6 needs no install.
+
+Two things learned doing it:
+
+- **`--scratch-path` is mandatory**, not hygiene. Without it the container writes Linux modules into
+  the macOS `.build` — the [`TOOLCHAIN.md`](TOOLCHAIN.md) corruption, with an architecture mismatch
+  on top.
+- **`swift:6.3.3-slim` will not work.** The slim variants ship the runtime only and have no
+  compiler.
+
+One gap remains, deliberately: this was verified on **aarch64**, because OrbStack runs the arm64
+image natively. `ubuntu-latest` is amd64. The failure class being hunted here — Glibc and Foundation
+divergence — is architecture-independent, so the residual risk is low and CI itself is the amd64
+check.
+
+The routine for running this check locally, and when it is worth the 92 seconds, is in
+[`WORKFLOW.md`](WORKFLOW.md) → *Where the checks run*.

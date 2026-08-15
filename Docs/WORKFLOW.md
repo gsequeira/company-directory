@@ -209,6 +209,47 @@ and visible, and a hook is neither. If you want automation, prefer an explicit c
 
 ---
 
+# Verifying a change that should not change behaviour
+
+Some issues are mechanical: a reformat (#6), removing dead syntax (#7), a rename. They share a
+shape — a large diff that is supposed to alter nothing — and that shape defeats the usual checks.
+
+**A green suite is weak evidence here.** 14 tests do not exercise every path, so "tests pass" means
+"nothing covered broke". For a change touching 200 lines across seven functions, that is a much
+smaller claim than it sounds. The instinct to treat a green run as proof is strongest exactly when
+the change is boring, which is when it is least justified.
+
+**Prefer a check whose failure would be visible.** For anything that only moves whitespace:
+
+```bash
+git diff --ignore-all-space
+```
+
+If the transformation really is structural, that diff contains *only* the lines you meant to
+delete. Anything else appearing is something you changed without noticing. It converts "trust me,
+it is just re-indentation" into a one-command verification, and it takes a second.
+
+Related tools for the neighbouring cases:
+
+| Change | Check |
+| --- | --- |
+| Whitespace and indentation only | `git diff --ignore-all-space` shows only intended deletions |
+| A rename | `git diff --word-diff` — every hunk should be the old and new name, nothing else |
+| Reformat by a tool | Run the tool twice; the second run must produce no diff. A formatter that is not idempotent is a bug you want to find before CI does |
+| Anything else | Say plainly what evidence you have. "It compiles and the tests pass" is an honest claim; it is not the same as "behaviour is unchanged" |
+
+**One concern per pull request.** Not tidiness — diagnostics. If a mechanical change and a
+behavioural one land together and something breaks, the diff cannot tell you which caused it, and
+`git bisect` lands on a commit that did two things. The cost of splitting is a second branch and
+about fifteen seconds.
+
+**Watch for issues that collide in the same file.** #6, #7 and #8 all rewrite `APIHandler.swift`,
+and two of them rewrite its indentation. They are independent as *issues* and adjacent as *diffs*.
+Sequence them, never interleave, and re-measure any counts recorded in an issue body afterwards —
+#6's finding count changes the moment #7 lands.
+
+---
+
 # What "done" means
 
 It differs by label, and getting this wrong is how an issue gets closed while the problem survives.

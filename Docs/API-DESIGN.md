@@ -10,7 +10,9 @@ document explains the mechanics involved rather than only listing the work.
 
 Companion documents: [`API-COVERAGE.md`](API-COVERAGE.md) audits how well the *existing* surface is
 tested, [`FLUENT.md`](FLUENT.md) explains the ORM layering these handlers sit on,
-[`TESTING.md`](TESTING.md) holds assertion conventions, [`ISSUES.md`](ISSUES.md) records
+[`TESTING.md`](TESTING.md) holds assertion conventions,
+[`MIDDLEWARE.md`](MIDDLEWARE.md) covers the cross-cutting layer the generated handlers cannot
+express, [`ISSUES.md`](ISSUES.md) records
 defects found and fixed, and [`LEARNING-PATH.md`](LEARNING-PATH.md) sets these phases in the wider
 context of building larger backends. [`POSTGRES.md`](POSTGRES.md) works through the database move
 that §2.3 below argues should happen before Phase 2. This document is about what the API *should*

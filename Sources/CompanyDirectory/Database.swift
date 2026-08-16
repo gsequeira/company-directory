@@ -38,9 +38,9 @@ private func postgresConfiguration() throws -> DatabaseConfigurationFactory {
         configuration: .init(
             hostname: Environment.get("DATABASE_HOST") ?? "localhost",
             port: Environment.get("DATABASE_PORT").flatMap(Int.init) ?? 5432,
-            username: Environment.get("DATABASE_USERNAME") ?? "foobar",
-            password: Environment.get("DATABASE_PASSWORD") ?? "foobar",
-            database: Environment.get("DATABASE_NAME") ?? "foobar",
+            username: Environment.get("DATABASE_USERNAME") ?? "company_directory",
+            password: Environment.get("DATABASE_PASSWORD") ?? "company_directory",
+            database: Environment.get("DATABASE_NAME") ?? "company_directory",
             // Correct for a container on this machine, and wrong for anything reachable
             // over a network.
             tls: .disable

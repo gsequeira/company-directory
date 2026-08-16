@@ -3,6 +3,14 @@
 What "Fluent" actually is, where a database error comes from, and why catching one looks the way it
 does in `APIHandler`.
 
+
+> **Renamed 2026-08-16.** This project was called `foobar` until the module became
+> `CompanyDirectory`. Captured output below still shows the old name — for example
+> `foobar.Migrations.CreateDepartments` — because it is a record of what actually ran. The
+> database, its user and its volume were renamed to `company_directory` in the same change.
+> Underscores rather than hyphens, because a hyphenated PostgreSQL identifier must be quoted in
+> every statement that names it. See #52.
+
 **Written 2026-08-14**, from working out how to map a unique-constraint violation to a `409`. That
 one line of `catch` turned out to need most of this document to justify, which is a good sign it
 was worth writing down.
@@ -86,7 +94,7 @@ protocol you do not own. It is an acknowledged-fragile move: if PostgresNIO ever
 ## Why the `FluentKit.` qualifier
 
 Originally it was mandatory. `Database.swift` declared its own `enum DatabaseError`, and inside
-module `foobar` an unqualified name resolves to the module's own declaration first. Without the
+the module an unqualified name resolves to the module's own declaration first. Without the
 qualifier the compiler said:
 
 ```
@@ -161,7 +169,7 @@ error: Process ... exited with unexpected signal code 5
 
 The test *process* died rather than a test failing.
 
-`Sources/foobar/SchemaConversions.swift` is now the single place a model id is unwrapped. The
+`Sources/CompanyDirectory/SchemaConversions.swift` is now the single place a model id is unwrapped. The
 conversions are initializers on the **schema** type rather than a `toSchema()` method on the model,
 so the dependency points from the generated API layer at the domain model and never back —
 regenerating the spec cannot ripple into `Models.swift`.

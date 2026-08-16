@@ -3,6 +3,14 @@
 How schema changes are made in this project, and what a migration against a database that already
 contains data actually behaves like.
 
+
+> **Renamed 2026-08-16.** This project was called `foobar` until the module became
+> `CompanyDirectory`. Captured output below still shows the old name — for example
+> `foobar.Migrations.CreateDepartments` — because it is a record of what actually ran. The
+> database, its user and its volume were renamed to `company_directory` in the same change.
+> Underscores rather than hyphens, because a hyphenated PostgreSQL identifier must be quoted in
+> every statement that names it. See #52.
+
 **Written 2026-08-14**, from a worked example: adding the unique constraint behind
 `createEmployee`'s 409. That migration failed on the first attempt, which is the reason this
 document exists — the first four migrations in this project all ran against an empty schema, which
@@ -39,7 +47,7 @@ the decision — delete, merge, or rename — is a product decision, not a techn
 
 ## Anatomy
 
-Migrations live in `Sources/foobar/Migrations.swift` as members of the `Migrations` enum:
+Migrations live in `Sources/CompanyDirectory/Migrations.swift` as members of the `Migrations` enum:
 
 ```swift
 struct AddEmployeeNameUniqueness: AsyncMigration {
@@ -310,7 +318,7 @@ pre-check under `READ COMMITTED`, but still blocks its insert on the unique inde
 
 ```bash
 # Hold the row uncommitted for five seconds.
-psql -h localhost -p 5432 -U foobar -d foobar <<'SQL' &
+psql -h localhost -p 5432 -U company_directory -d company_directory <<'SQL' &
 BEGIN;
 INSERT INTO departments (name, inserted_at, updated_at) VALUES ('LockTest', now(), now());
 SELECT pg_sleep(5);

@@ -6,13 +6,13 @@ import Testing
 import Vapor
 import VaporTesting
 
-@testable import foobar
+@testable import CompanyDirectory
 
 struct TestHelpers {
     /// The database the suite runs against: the `db-test` service in `docker-compose.yml`.
     ///
     /// The database *name* is deliberately hardcoded rather than read from the environment. The
-    /// port is overridable so CI can point elsewhere, but `foobar_test` is not — a misconfigured
+    /// port is overridable so CI can point elsewhere, but `company_directory_test` is not — a misconfigured
     /// port then fails to connect rather than reaching the development database, which
     /// `withApplication` would proceed to drop every table in.
     private static func databaseConfiguration() -> DatabaseConfigurationFactory {
@@ -20,9 +20,9 @@ struct TestHelpers {
             configuration: .init(
                 hostname: Environment.get("TEST_DATABASE_HOST") ?? "localhost",
                 port: Environment.get("TEST_DATABASE_PORT").flatMap(Int.init) ?? 5433,
-                username: "foobar",
-                password: "foobar",
-                database: "foobar_test",
+                username: "company_directory",
+                password: "company_directory",
+                database: "company_directory_test",
                 tls: .disable
             )
         )

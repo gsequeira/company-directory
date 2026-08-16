@@ -45,20 +45,20 @@ jobs:
       postgres:
         image: postgres:18-alpine
         env:
-          POSTGRES_USER: foobar
-          POSTGRES_PASSWORD: foobar
-          POSTGRES_DB: foobar_test
+          POSTGRES_USER: company_directory
+          POSTGRES_PASSWORD: company_directory
+          POSTGRES_DB: company_directory_test
         # No `ports:` mapping. A job running inside a container reaches a service by its
         # name on the *container* port, over the network Actions creates for them both.
         # `ports:` plus `localhost` is what a job running directly on the runner needs.
         options: >-
-          --health-cmd "pg_isready -U foobar -d foobar_test"
+          --health-cmd "pg_isready -U company_directory -d company_directory_test"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 15
 
     env:
-      # `foobar_test` is hardcoded in TestHelpers on purpose and is not overridable — a
+      # `company_directory_test` is hardcoded in TestHelpers on purpose and is not overridable — a
       # misconfigured host then fails to connect rather than reaching a database whose
       # tables autoRevert() would proceed to drop.
       TEST_DATABASE_HOST: postgres

@@ -147,7 +147,7 @@ While swapping the SQLite driver for PostgreSQL (step 2 of [`POSTGRES.md`](POSTG
 that should have failed with a plain "no such module" produced this instead:
 
 ```
-Sources/foobar/Database.swift:2:8: error: compiled module was created by a newer version
+Sources/CompanyDirectory/Database.swift:2:8: error: compiled module was created by a newer version
 of the compiler: .build/arm64-apple-macosx/debug/Modules/FluentSQLiteDriver.swiftmodule
 ```
 

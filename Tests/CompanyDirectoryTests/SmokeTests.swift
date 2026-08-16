@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import foobar
+@testable import CompanyDirectory
 
 #if canImport(FoundationNetworking)
     // URLSession lives in a separate module on Linux. The suite is skipped there in practice,
@@ -19,7 +19,7 @@ import Testing
 // It runs only when `SMOKE_BASE_URL` is set, so an ordinary `swift test` — and CI, where no server
 // is listening — skips it rather than failing:
 //
-//     swift run foobar serve &
+//     swift run CompanyDirectory serve &
 //     SMOKE_BASE_URL=http://127.0.0.1:8080 swift test --filter SmokeTests
 //
 // `Scripts/smoke.sh` covers the same ground without a build step, and works against a deployment

@@ -147,7 +147,7 @@ The whole point of the container job is that you can run the same thing on your 
 docker compose up -d --wait db-test
 docker run --rm --network foobar_default \
   -e TEST_DATABASE_HOST=db-test -e TEST_DATABASE_PORT=5432 \
-  -v "$PWD":/src -w /src -v /tmp/foobar-linux-build:/build \
+  -v "$PWD":/src -w /src -v /tmp/company-directory-linux-build:/build \
   swift:6.3.3 swift test --scratch-path /build
 ```
 
@@ -216,7 +216,7 @@ mapping and none is wanted. `ports:` plus `localhost` is what a job running dire
 needs; the two configurations are not interchangeable and mixing them is the most common way this
 fails.
 
-The database *name* is not here because it is deliberately not overridable — `foobar_test` is
+The database *name* is not here because it is deliberately not overridable — `company_directory_test` is
 hardcoded in `TestHelpers`, so a misconfiguration fails to connect rather than reaching a database
 whose tables `autoRevert()` would then drop.
 
@@ -305,7 +305,7 @@ Nothing here handles secrets yet, and that is worth preserving deliberately.
 
 - `permissions: contents: read` is set at workflow level. The default token is broader than this
   job needs.
-- The database password is `foobar` on an ephemeral container that exists for twelve minutes and is
+- The database password is `company_directory` on an ephemeral container that exists for twelve minutes and is
   reachable only from the job. It is not a secret and should never become one by being moved into
   `secrets` — that would imply it matters.
 - **When a real secret does appear**, remember that `pull_request` runs from forks do not receive

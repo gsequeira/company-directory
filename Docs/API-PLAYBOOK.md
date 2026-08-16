@@ -221,7 +221,21 @@ foreign key (#18, step 1), but no operation reads or writes it yet.
 
 ## Running it as a script
 
-`Scripts/smoke.sh` walks the same round trip automatically:
+`Scripts/smoke.sh` walks the same round trip automatically. It needs a database and a **running
+server** — it drives one over a real socket rather than starting anything itself.
+
+```bash
+# 1. the development database
+docker compose up -d --wait db
+
+# 2. the server, in another terminal (or append & to background it)
+swift run foobar serve
+
+# 3. the checks
+Scripts/smoke.sh
+```
+
+Stop the server with Ctrl-C when finished. The database can stay up; it costs nothing idle.
 
 ```console
 $ Scripts/smoke.sh
@@ -267,9 +281,14 @@ confirming no `smoke-` rows survive, on both the passing and the failing paths.
 `Tests/foobarTests/SmokeTests.swift` walks the same ground as a Swift Testing suite:
 
 ```bash
-swift run foobar serve &
+docker compose up -d --wait db                    # the server needs it
+swift run foobar serve &                          # backgrounded so the next line can run
 SMOKE_BASE_URL=http://127.0.0.1:8080 swift test --filter SmokeTests
+kill %1                                           # stop the server afterwards
 ```
+
+Note `db`, not `db-test`: this drives a real server, which uses the development database. The suite
+proper still uses `db-test`, so the two do not interfere.
 
 It runs **only** when `SMOKE_BASE_URL` is set — an ordinary `swift test` reports it as skipped
 rather than failing, so CI is unaffected.

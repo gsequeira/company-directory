@@ -13,6 +13,12 @@
 # Safe to run against a database with data in it: every name is unique to this run, and anything
 # created is deleted again on exit.
 #
+# Requires a running server. This script drives one; it does not start anything.
+#
+#   docker compose up -d --wait db      # the development database
+#   swift run foobar serve              # in another terminal
+#   Scripts/smoke.sh                    # then this
+#
 # Usage:
 #   Scripts/smoke.sh                        # http://127.0.0.1:8080
 #   Scripts/smoke.sh http://host:port       # somewhere else

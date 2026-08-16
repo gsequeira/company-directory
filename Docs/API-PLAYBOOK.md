@@ -262,6 +262,32 @@ Every name it creates carries a per-run suffix, and it deletes what it created o
 when a check fails part way through. Verified by running it against a populated database and
 confirming no `smoke-` rows survive, on both the passing and the failing paths.
 
+### There is a Swift version too, and they are not redundant
+
+`Tests/foobarTests/SmokeTests.swift` walks the same ground as a Swift Testing suite:
+
+```bash
+swift run foobar serve &
+SMOKE_BASE_URL=http://127.0.0.1:8080 swift test --filter SmokeTests
+```
+
+It runs **only** when `SMOKE_BASE_URL` is set — an ordinary `swift test` reports it as skipped
+rather than failing, so CI is unaffected.
+
+| | `Scripts/smoke.sh` | `SmokeTests.swift` |
+| --- | --- | --- |
+| Build required | None | The test target |
+| Runs from | Any machine with HTTPie | A checkout of this repository |
+| Assertions | Status codes, as strings | Responses decoded into `Components.Schemas.*` |
+| Catches a spec change | No | **Yes — it stops compiling** |
+
+The last row is the difference worth having. The shell script compares `201` to `201` and cannot
+know what the body should contain. The Swift suite decodes into the generated types, so adding a
+required field to `Employee` breaks this file at compile time rather than at some later run.
+
+The shell version keeps its place because it needs neither a toolchain nor the repository, which is
+what a smoke test against a deployed server actually requires.
+
 ### When not to wire it into CI
 
 Not as a second job. CI already runs the suite against a service container, so a smoke test there

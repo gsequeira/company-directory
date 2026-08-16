@@ -3,6 +3,13 @@
 How schema changes are made in this project, and what a migration against a database that already
 contains data actually behaves like.
 
+
+> **Renamed 2026-08-16.** This project was called `foobar` until the module became
+> `CompanyDirectory`. Captured output below still shows the old name — for example
+> `foobar.Migrations.CreateDepartments` — because it is a record of what actually ran. The
+> database, its user and its volume are still named `foobar` and were deliberately not
+> renamed; see #52.
+
 **Written 2026-08-14**, from a worked example: adding the unique constraint behind
 `createEmployee`'s 409. That migration failed on the first attempt, which is the reason this
 document exists — the first four migrations in this project all ran against an empty schema, which
@@ -39,7 +46,7 @@ the decision — delete, merge, or rename — is a product decision, not a techn
 
 ## Anatomy
 
-Migrations live in `Sources/foobar/Migrations.swift` as members of the `Migrations` enum:
+Migrations live in `Sources/CompanyDirectory/Migrations.swift` as members of the `Migrations` enum:
 
 ```swift
 struct AddEmployeeNameUniqueness: AsyncMigration {

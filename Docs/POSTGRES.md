@@ -3,6 +3,13 @@
 A step-by-step migration from the in-memory SQLite database to PostgreSQL running in Docker, with
 a verification checkpoint after every step.
 
+
+> **Renamed 2026-08-16.** This project was called `foobar` until the module became
+> `CompanyDirectory`. Captured output below still shows the old name — for example
+> `foobar.Migrations.CreateDepartments` — because it is a record of what actually ran. The
+> database, its user and its volume are still named `foobar` and were deliberately not
+> renamed; see #52.
+
 **Status as of 2026-08-14: steps 0–7 complete.** The application and the test suite both run on
 PostgreSQL, 14/14 tests pass in about 1.5 seconds, and the outputs recorded below are real rather
 than expected. This was step 3 of the sequence in [`LEARNING-PATH.md`](LEARNING-PATH.md), pulled
@@ -32,13 +39,13 @@ means writing Phase 2 twice.
 | --- | --- | --- |
 | `docker-compose.yml` | New. Two Postgres services. | None — new file |
 | `Package.swift` | `fluent-sqlite-driver` → `fluent-postgres-driver` | Low |
-| `Sources/foobar/Database.swift` | Driver swap, connection read from the environment, injectable configuration | Low |
-| `Sources/foobar/ServerService.swift` | Passes a database configuration through to `configureDatabase` | Low, but **do not skip** — see step 6a |
-| `Tests/foobarTests/TestHelpers.swift` | Loses free per-test isolation | **This is the real work** |
-| `Tests/foobarTests/APIHandlerTests.swift` | `.serialized` trait, unused import removed | Low |
+| `Sources/CompanyDirectory/Database.swift` | Driver swap, connection read from the environment, injectable configuration | Low |
+| `Sources/CompanyDirectory/ServerService.swift` | Passes a database configuration through to `configureDatabase` | Low, but **do not skip** — see step 6a |
+| `Tests/CompanyDirectoryTests/TestHelpers.swift` | Loses free per-test isolation | **This is the real work** |
+| `Tests/CompanyDirectoryTests/APIHandlerTests.swift` | `.serialized` trait, unused import removed | Low |
 | `.gitignore` | Ignore `.env` | None |
 
-`Sources/foobar/APIHandler.swift`, `Models.swift` and `Migrations.swift` need **no changes**. Worth
+`Sources/CompanyDirectory/APIHandler.swift`, `Models.swift` and `Migrations.swift` need **no changes**. Worth
 knowing why, because it is not luck:
 
 - The handler never inspects database error text. Both duplicate checks (`APIHandler.swift:37` and
@@ -333,7 +340,7 @@ Replace the SQLite dependency:
 .package(url: "https://github.com/vapor/fluent-postgres-driver.git", from: "2.12.0")
 ```
 
-And in the `foobar` target's dependencies:
+And in the application target's dependencies:
 
 ```swift
 // Remove:
@@ -367,7 +374,7 @@ module you did not change, at a path inside `.build`, means clean before debuggi
 
 ---
 
-# Step 3 — `Sources/foobar/Database.swift`
+# Step 3 — `Sources/CompanyDirectory/Database.swift`
 
 The current file hardcodes `.sqlite(.memory)` at line 30. The replacement has to be configurable,
 because the same binary now needs to reach three different servers over its life: your Mac, CI, and
@@ -748,7 +755,7 @@ job.
 Which raised the one thing to check early, since this project had only ever been built on macOS:
 
 ```bash
-docker run --rm -v "$PWD":/src -w /src -v /tmp/foobar-linux-build:/build \
+docker run --rm -v "$PWD":/src -w /src -v /tmp/company-directory-linux-build:/build \
   swift:6.3.3 swift build --scratch-path /build
 ```
 

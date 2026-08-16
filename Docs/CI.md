@@ -147,7 +147,7 @@ The whole point of the container job is that you can run the same thing on your 
 docker compose up -d --wait db-test
 docker run --rm --network foobar_default \
   -e TEST_DATABASE_HOST=db-test -e TEST_DATABASE_PORT=5432 \
-  -v "$PWD":/src -w /src -v /tmp/foobar-linux-build:/build \
+  -v "$PWD":/src -w /src -v /tmp/company-directory-linux-build:/build \
   swift:6.3.3 swift test --scratch-path /build
 ```
 

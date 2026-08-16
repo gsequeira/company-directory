@@ -6,7 +6,7 @@ import Testing
 import Vapor
 import VaporTesting
 
-@testable import foobar
+@testable import CompanyDirectory
 
 struct TestHelpers {
     /// The database the suite runs against: the `db-test` service in `docker-compose.yml`.

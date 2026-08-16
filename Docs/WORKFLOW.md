@@ -215,7 +215,7 @@ You can run the Linux check without waiting on GitHub:
 docker compose up -d --wait db-test
 docker run --rm --network foobar_default \
   -e TEST_DATABASE_HOST=db-test -e TEST_DATABASE_PORT=5432 \
-  -v "$PWD":/src -w /src -v /tmp/foobar-linux-build:/build \
+  -v "$PWD":/src -w /src -v /tmp/company-directory-linux-build:/build \
   swift:6.3.3 swift test --scratch-path /build
 ```
 
@@ -318,7 +318,7 @@ separate work.
 
 ## `spec-defect`
 
-1. Change `Sources/foobar/openapi.yaml`.
+1. Change `Sources/CompanyDirectory/openapi.yaml`.
 2. Build. If `APIProtocol` gained requirements, the compiler now enumerates the work — that is
    spec-first behaving correctly, not a problem.
 3. Implement, and add tests for the new responses.

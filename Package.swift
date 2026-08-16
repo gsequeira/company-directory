@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "foobar",
+    name: "CompanyDirectory",
     platforms: [.macOS(.v26)],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.121.4"),
@@ -17,7 +17,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "foobar",
+            name: "CompanyDirectory",
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
@@ -32,9 +32,9 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "foobarTests",
+            name: "CompanyDirectoryTests",
             dependencies: [
-                "foobar",
+                "CompanyDirectory",
                 .product(name: "VaporTesting", package: "vapor"),
             ]
         ),

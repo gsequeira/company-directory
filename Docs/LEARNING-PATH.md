@@ -1,6 +1,6 @@
 # Learning path
 
-`foobar` is a learning project. The goal beyond it is being able to build substantial server-side
+CompanyDirectory is a learning project. The goal beyond it is being able to build substantial server-side
 Swift backends — an online shopping system is the working example. This document is about the
 distance between the two, and how to close it without abandoning this project.
 

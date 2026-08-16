@@ -5,7 +5,7 @@ import Testing
 import Vapor
 import VaporTesting
 
-@testable import foobar
+@testable import CompanyDirectory
 
 // `.serialized` is load-bearing, not a style choice. Every test shares one PostgreSQL server, and
 // `TestHelpers.withApplication` reverts all migrations when each finishes — so tests running in

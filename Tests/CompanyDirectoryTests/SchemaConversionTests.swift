@@ -2,7 +2,7 @@ import Fluent
 import Foundation
 import Testing
 
-@testable import foobar
+@testable import CompanyDirectory
 
 // Unit tests, not integration tests — these touch no database, so they need neither
 // `TestHelpers.withApplication` nor the `.serialized` trait that the integration suite depends on.

@@ -62,7 +62,7 @@ Twenty declared statuses across ten operations, and every one of them has an aut
 
 ```bash
 docker compose up -d --wait db     # the development database, not db-test
-swift run foobar serve             # http://127.0.0.1:8080
+swift run CompanyDirectory serve             # http://127.0.0.1:8080
 ```
 
 `autoMigrate()` runs at startup, so the schema is created or brought up to date before the first
@@ -229,7 +229,7 @@ server** — it drives one over a real socket rather than starting anything itse
 docker compose up -d --wait db
 
 # 2. the server, in another terminal (or append & to background it)
-swift run foobar serve
+swift run CompanyDirectory serve
 
 # 3. the checks
 Scripts/smoke.sh
@@ -240,7 +240,7 @@ Stop the server with Ctrl-C when finished. The database can stay up; it costs no
 ```console
 $ Scripts/smoke.sh
 smoke: http://127.0.0.1:8080
-smoke: log /var/folders/.../foobar-smoke-20260816-134547.log
+smoke: log /var/folders/.../companydirectory-smoke-20260816-134547.log
   ok    server is reachable and /health answers
   ok    create department
   ok    duplicate department conflicts
@@ -278,11 +278,11 @@ confirming no `smoke-` rows survive, on both the passing and the failing paths.
 
 ### There is a Swift version too, and they are not redundant
 
-`Tests/foobarTests/SmokeTests.swift` walks the same ground as a Swift Testing suite:
+`Tests/CompanyDirectoryTests/SmokeTests.swift` walks the same ground as a Swift Testing suite:
 
 ```bash
 docker compose up -d --wait db                    # the server needs it
-swift run foobar serve &                          # backgrounded so the next line can run
+swift run CompanyDirectory serve &                          # backgrounded so the next line can run
 SMOKE_BASE_URL=http://127.0.0.1:8080 swift test --filter SmokeTests
 kill %1                                           # stop the server afterwards
 ```

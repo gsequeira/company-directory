@@ -1,6 +1,6 @@
 # Known issues in the test suite
 
-Defects found in `Tests/foobarTests/APIHandlerTests.swift`, with their fixes. All issues recorded
+Defects found in `Tests/CompanyDirectoryTests/APIHandlerTests.swift`, with their fixes. All issues recorded
 here are resolved; the file is kept as a record of what went wrong and why the guards against
 recurrence look the way they do. See [`TESTING.md`](TESTING.md) for the conventions these fixes
 follow.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# End-to-end smoke test against a *running* foobar server.
+# End-to-end smoke test against a *running* CompanyDirectory server.
 #
 # This is NOT a substitute for `swift test`. The suite owns correctness and asserts far more than
 # this does. This script covers the three things the suite cannot, because it drives the
@@ -16,7 +16,7 @@
 # Requires a running server. This script drives one; it does not start anything.
 #
 #   docker compose up -d --wait db      # the development database
-#   swift run foobar serve              # in another terminal
+#   swift run CompanyDirectory serve              # in another terminal
 #   Scripts/smoke.sh                    # then this
 #
 # Usage:
@@ -25,7 +25,7 @@
 #   SMOKE_BASE_URL=http://host:port Scripts/smoke.sh   # same, via the environment
 #   SMOKE_LOG=/path/to/file Scripts/smoke.sh
 #
-# SMOKE_BASE_URL is the same variable Tests/foobarTests/SmokeTests.swift reads, deliberately:
+# SMOKE_BASE_URL is the same variable Tests/CompanyDirectoryTests/SmokeTests.swift reads, deliberately:
 # one name for one concept, so setting it and running either check targets the same server.
 #
 # Exit status: 0 if every check passed, 1 otherwise.
@@ -37,7 +37,7 @@ set -u -o pipefail
 BASE="${1:-${SMOKE_BASE_URL:-http://127.0.0.1:8080}}"
 API="$BASE/api"
 RUN_ID="$$-$(date +%s)"
-LOG="${SMOKE_LOG:-${TMPDIR:-/tmp}/foobar-smoke-$(date +%Y%m%d-%H%M%S).log}"
+LOG="${SMOKE_LOG:-${TMPDIR:-/tmp}/companydirectory-smoke-$(date +%Y%m%d-%H%M%S).log}"
 
 PASSED=0
 FAILED=0
@@ -102,7 +102,7 @@ command -v http >/dev/null 2>&1 || { echo "smoke: HTTPie ('http') is not install
 
 echo "smoke: $BASE"
 echo "smoke: log $LOG"
-log "foobar smoke test against $BASE at $(date)"
+log "companydirectory smoke test against $BASE at $(date)"
 
 # --- the server itself -------------------------------------------------------------------------
 
@@ -112,7 +112,7 @@ check "server is reachable and /health answers" 200 "$STATUS"
 if [ "$STATUS" != "200" ]; then
     echo
     echo "smoke: the server is not answering; the remaining checks would only repeat this."
-    echo "smoke: start it with 'swift run foobar serve' and try again."
+    echo "smoke: start it with 'swift run CompanyDirectory serve' and try again."
     exit 1
 fi
 

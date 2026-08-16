@@ -254,6 +254,18 @@ branch protection, not after.
 | Passes locally, fails in CI | Usually leftover local state. CI starts from an empty database every time; your `db-test` container does not |
 | Passes in CI, fails locally | Almost always a stopped `db-test` container. Check `docker compose ps` before assuming it is your code |
 
+## Green in CI, will not build on your Mac
+
+The reverse of the row above, and not a CI fault: the pinned toolchain can be older than the macOS
+SDK on a *local* machine, which on a beta OS breaks the build inside a dependency while CI stays
+green. The job runs in `swift:6.3.3` on Linux and never sees a macOS SDK, so the failure cannot
+reach it — the environment CI standardises is exactly the one that diverged.
+
+Recorded 2026-08-16 with the full error, the three fixes not to reach for, and the local override
+that leaves `.swift-version` alone: [`TOOLCHAIN.md`](TOOLCHAIN.md) → *A beta macOS SDK can outrun
+the pin*. The rule for this document is the short one — **do not "fix" it by editing
+`.swift-version` or the `container:` tag**, which would break every machine that was working.
+
 ## Cached-build corruption
 
 `.build` is **deliberately not cached**. A build directory written by a different compiler produces:

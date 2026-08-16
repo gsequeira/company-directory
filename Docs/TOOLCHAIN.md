@@ -105,6 +105,59 @@ deliberate decision with a wider blast radius.
 `platforms: [.macOS(.v26)]` and `swiftLanguageModes: [.v6]` are unaffected by a toolchain bump in
 either direction.
 
+## A beta macOS SDK can outrun the pin
+
+The pin fixes the *compiler*. It does not fix the SDK that compiler builds against, and on a machine
+running a beta macOS the SDK can arrive months ahead of the pinned release. Seen 2026-08-16 on a Mac
+running beta macOS 27 with beta Xcode 27, where `swift run CompanyDirectory serve` failed inside a
+*dependency*:
+
+```
+.build/checkouts/swift-crypto/Sources/CryptoExtras/Digests/SHA512256Digest.swift:18:15:
+error: type 'SHA512256Digest' does not conform to protocol 'ContiguousBytes'
+note: protocol requires function 'withBytes' with type '<R, E> ((RawSpan) throws(E) -> R) throws(E) -> R'
+```
+
+That SDK's Foundation added a `withBytes` requirement to `ContiguousBytes`, gated at macOS 27 and
+carrying an `@_alwaysEmitIntoClient` default implementation. Swift 6.3.3 does not take that default
+as the witness, so every `Digest` type in swift-crypto reads as non-conforming and nothing depending
+on Vapor compiles. Xcode 27 beta's Swift 6.4 compiles it.
+
+Note what this is *not*: not the two-compilers problem above, since only one compiler is involved,
+and not a `.build` hazard — `swift package clean` changes nothing here. It is the pinned compiler
+meeting a standard library newer than itself.
+
+Three fixes that look right and are not:
+
+| Tempting | Why not |
+| --- | --- |
+| Bump the swift-crypto pin | 4.5.1 has byte-identical sources. There is no released fix to move to |
+| `-Xswiftc -target arm64-apple-macos27.0` | The `@available(macOS 10.15)` on the conforming type is what blocks the witness, not the deployment target. Gets further into the build, fails the same way |
+| Point `.swift-version` at `xcode` or a snapshot | Drags every other machine and CI along to satisfy one beta install, and breaks the *Verify the toolchain* step — there is no `swift:xcode` image |
+
+The last row is the one worth resisting hardest, and it is the same argument as
+[*Upgrading*](#upgrading) in reverse: the pin's value is that it reads the same everywhere. A beta
+OS is the one machine allowed to be wrong, so **the answer is to build on a machine with a shipping
+SDK**, not to move the pin. Decided that way on 2026-08-16; the pin stayed at 6.3.3.
+
+If a build is genuinely needed on such a machine, override locally and leave the file alone:
+
+```bash
+swiftly run swift build +xcode                # swiftly lists `xcode` as a system toolchain
+xcrun swift build                             # equivalent, bypassing swiftly
+```
+
+Both invoke a *different compiler build* than the pin names, so give them their own scratch
+directory — otherwise this is exactly the mixed-`.build` corruption in the appendix below:
+
+```bash
+xcrun swift build --scratch-path /tmp/company-directory-xcode-build
+```
+
+**CI cannot see any of this**, which is the point of running it in `swift:6.3.3` on Linux: no macOS
+SDK is involved, so the failure cannot reach it. See [`CI.md`](CI.md) → *What can go wrong* for the
+green-in-CI-red-locally reading of the same event.
+
 ## The split reaches the bundled tools too
 
 The two toolchains do not just differ in compiler build. They ship **different versions of the

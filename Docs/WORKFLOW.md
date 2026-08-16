@@ -65,6 +65,24 @@ to encourage using it.
   implements them. Deliberately broken in between.
 - **#18 (the relationship)** — a migration, model changes and spec changes together.
 
+## Adding to an issue body
+
+`gh issue edit --body` and `--body-file` **replace** the body — they do not append. Adding a note
+therefore means reading the current body, editing the whole thing, and writing it back:
+
+```bash
+gh issue view 9 --json body -q .body > /tmp/issue9.md   # existing text first
+# append the note, then:
+gh issue edit 9 --body-file /tmp/issue9.md
+```
+
+Write the body to a file rather than passing `--body "…"`; a body containing backticks and quotes
+will otherwise be mangled by the shell before `gh` ever sees it.
+
+**This has already cost once.** #9's original description was silently destroyed on 2026-08-15 by an
+edit that supplied only the new note, and the loss was found a day later by accident. If the note
+stands on its own, `gh issue comment` cannot lose anything and is the safer default.
+
 ---
 
 # Naming
@@ -117,8 +135,8 @@ those are the ones to respect:
 | --- | --- | --- |
 | #2 | #14 | The invalid-input tests land red until the `400` mapping exists |
 | #3 | Any new list-asserting test | Current ordering is accidental; write tests against it and the luck gets baked into assertions |
-| #10 | #9 | `UpdateEmployeeRequest`'s shape *is* the PATCH decision |
-| #7, #8 | #9 | #9 mirrors the department handlers. Copy them unfixed and it is six sites to correct, not three |
+| ~~#10~~ | #9 | `UpdateEmployeeRequest`'s shape *is* the PATCH decision. **Decided 2026-08-16** — partial update; see [`API-DESIGN.md`](API-DESIGN.md) §1.3. #9 is unblocked, and also carries the matching change to `UpdateDepartmentRequest` |
+| ~~#7, #8~~ | #9 | #9 mirrors the department handlers. Copy them unfixed and it is six sites to correct, not three. **Both merged** 2026-08-15/16 |
 | #19, #20 | #18 | Both change the migration and the model |
 | #17 | #18 | Phase 2 changes that code's correctness — the test turns it into a visible failure |
 | #18 | #21 | Nothing to narrow until the foreign key exists |

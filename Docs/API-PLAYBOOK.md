@@ -14,6 +14,50 @@ Companion documents: [`API-DESIGN.md`](API-DESIGN.md) is what the API *should* c
 
 `http` is [HTTPie](https://httpie.io). Every command assumes `:8080/api` as the base.
 
+## What there is to exercise
+
+Every status the spec declares, by entity. All of them are demonstrated below.
+
+### Departments
+
+| Operation | Status | Meaning |
+| --- | --- | --- |
+| `GET /api/departments` | `200` | The list, possibly empty |
+| `POST /api/departments` | `201` | Created; body carries the assigned `id` |
+| | `409` | A department already holds that name |
+| `GET /api/departments/{id}` | `200` | The department |
+| | `404` | No department with that id; empty body |
+| `PATCH /api/departments/{id}` | `200` | Updated, or unchanged if the patch was empty |
+| | `404` | No department with that id |
+| | `409` | Another department already holds that name |
+| `DELETE /api/departments/{id}` | `204` | Deleted; no body |
+| | `404` | No department with that id |
+
+### Employees
+
+| Operation | Status | Meaning |
+| --- | --- | --- |
+| `GET /api/employees` | `200` | The list, possibly empty |
+| `POST /api/employees` | `201` | Created; body carries the assigned `id` |
+| | `409` | An employee already has that first and last name |
+| `GET /api/employees/{id}` | `200` | The employee |
+| | `404` | No employee with that id; empty body |
+| `PATCH /api/employees/{id}` | `200` | Updated, or unchanged if the patch was empty |
+| | `404` | No employee with that id |
+| | `409` | The resulting first and last name are already taken |
+| `DELETE /api/employees/{id}` | `204` | Deleted; no body |
+| | `404` | No employee with that id |
+
+### Outside the specification
+
+| Operation | Status | Note |
+| --- | --- | --- |
+| `GET /health` | `200` | Registered outside the OpenAPI transport, so no `/api` prefix |
+| Any operation, malformed input | `500` | Undeclared and incorrect; should be `400` (#2) |
+
+Twenty declared statuses across ten operations, and every one of them has an automated test as well
+— see [`API-COVERAGE.md`](API-COVERAGE.md).
+
 ## Start it
 
 ```bash
@@ -162,6 +206,14 @@ supplied field with the stored one before querying.
 ```console
 $ http DELETE :8080/api/employees/2
 HTTP/1.1 204 No Content
+```
+
+All three single-employee operations return `404` with an empty body for an id that does not exist:
+
+```console
+$ http GET    :8080/api/employees/999          → 404, content-length: 0
+$ http PATCH  :8080/api/employees/999 firstName=Nobody   → 404, content-length: 0
+$ http DELETE :8080/api/employees/999          → 404, content-length: 0
 ```
 
 `departmentId` does not appear in any response. The column exists in the database with an enforced

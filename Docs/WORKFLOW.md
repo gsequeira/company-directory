@@ -17,6 +17,7 @@ each lesson.
 gh issue develop 3 --checkout          # branch, linked to the issue on GitHub
 docker compose up -d --wait            # the suite needs db-test running
 # ... work ...
+swift format lint --strict -r Sources Tests Package.swift   # CI gates on this
 swift build && swift test              # all green before you push
 git push -u origin HEAD
 gh pr create --fill --body "Fixes #3"

@@ -127,8 +127,19 @@ git switch -c 18b-employee-department-model
 ```
 
 Reference the issue in the body — `Part of #18` — and let the final pull request be the one that
-closes it, with `Closes #18`. The linkage is worth having when one branch finishes an issue, and is
-actively wrong when it does not.
+finishes it, with a closing keyword. The linkage is worth having when one branch completes an issue,
+and is actively wrong when it does not.
+
+### A second mechanism: prose in a commit message
+
+The commit recording the incident above contained the sentence *"Merging it closed #18 anyway"*.
+GitHub matched `closed #18` as a closing keyword and closed the issue for a second time, within a
+minute of it being reopened.
+
+**Any of `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`
+immediately before `#N` will close that issue**, wherever it appears in a commit message or pull
+request body — including inside a sentence that is merely describing something. Write "issue 18" or
+rephrase the verb when the intent is narrative rather than instruction.
 
 Suggested short names where the derived one is too long:
 

@@ -219,6 +219,55 @@ $ http DELETE :8080/api/employees/999          → 404, content-length: 0
 `departmentId` does not appear in any response. The column exists in the database with an enforced
 foreign key (#18, step 1), but no operation reads or writes it yet.
 
+## Running it as a script
+
+`Scripts/smoke.sh` walks the same round trip automatically:
+
+```console
+$ Scripts/smoke.sh
+smoke: http://127.0.0.1:8080
+smoke: log /var/folders/.../foobar-smoke-20260816-134547.log
+  ok    server is reachable and /health answers
+  ok    create department
+  ok    duplicate department conflicts
+  ...
+  ok    deleted department is gone
+
+smoke: 19 passed
+```
+
+It takes an optional base URL (`Scripts/smoke.sh http://host:port`), writes full request and
+response detail to a log file, and exits non-zero if any check fails. On failure it prints the
+offending response to stdout as well; on success the log is there and nobody needs to read it.
+
+### What it is for
+
+**Not correctness.** The suite asserts more than this does and owns that question. This script
+covers the three things the suite structurally cannot, because it drives the application in-process
+and reverts its migrations after each test:
+
+| Gap | Why the suite misses it |
+| --- | --- |
+| A real server on a real port | `TestHelpers.withApplication` calls `application.sendRequest` in process; nothing binds a socket |
+| `/health` | Registered outside the OpenAPI transport, so no generated handler and no test |
+| Startup against a populated database | Every test reverts its migrations, so migrations are only ever exercised against an empty schema |
+
+The last is the one that has bitten this project before: a migration that succeeds on an empty
+schema and fails against existing rows passes `swift test` and breaks the development server. See
+[`MIGRATIONS.md`](MIGRATIONS.md).
+
+### It is safe to run against a database with data
+
+Every name it creates carries a per-run suffix, and it deletes what it created on exit — including
+when a check fails part way through. Verified by running it against a populated database and
+confirming no `smoke-` rows survive, on both the passing and the failing paths.
+
+### When not to wire it into CI
+
+Not as a second job. CI already runs the suite against a service container, so a smoke test there
+would double the maintenance for no new signal. It earns a place the day there is a deployment step
+to run it after.
+
 ## Where it answers wrongly
 
 Three reproducible cases where the response does not match the contract. Each has an open issue.

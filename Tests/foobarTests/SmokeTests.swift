@@ -38,8 +38,13 @@ struct SmokeTests {
 
     // MARK: - Transport
 
-    private static var baseURL: String {
-        ProcessInfo.processInfo.environment["SMOKE_BASE_URL"] ?? "http://127.0.0.1:8080"
+    /// No default. The suite only runs when `SMOKE_BASE_URL` is set, so a fallback would be
+    /// unreachable code that reads as though localhost were a sensible default — and silently
+    /// targeting the wrong machine is the worst way for a deployment check to fail.
+    ///
+    /// `Scripts/smoke.sh` reads the same variable, so setting it once targets either check.
+    private static var baseURL: String? {
+        ProcessInfo.processInfo.environment["SMOKE_BASE_URL"]
     }
 
     /// Sends a request and returns the status and body. Deliberately thin: the point is to exercise
@@ -49,12 +54,14 @@ struct SmokeTests {
         _ path: String,
         json: Data? = nil
     ) async throws -> (status: Int, body: Data) {
+        let base = try #require(Self.baseURL, "SMOKE_BASE_URL is not set")
+
         // Not `URL(string:)!`. A malformed SMOKE_BASE_URL is a configuration mistake, and trapping
         // on it would abort the whole test process rather than failing this one test — the same
         // argument as #8. `NeverForceUnwrap` catches this now that #6 enabled it.
         let url = try #require(
-            URL(string: Self.baseURL + path),
-            "SMOKE_BASE_URL does not form a valid URL: \(Self.baseURL + path)"
+            URL(string: base + path),
+            "SMOKE_BASE_URL does not form a valid URL: \(base + path)"
         )
         var request = URLRequest(url: url)
         request.httpMethod = method

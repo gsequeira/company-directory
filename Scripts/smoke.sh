@@ -22,7 +22,11 @@
 # Usage:
 #   Scripts/smoke.sh                        # http://127.0.0.1:8080
 #   Scripts/smoke.sh http://host:port       # somewhere else
+#   SMOKE_BASE_URL=http://host:port Scripts/smoke.sh   # same, via the environment
 #   SMOKE_LOG=/path/to/file Scripts/smoke.sh
+#
+# SMOKE_BASE_URL is the same variable Tests/foobarTests/SmokeTests.swift reads, deliberately:
+# one name for one concept, so setting it and running either check targets the same server.
 #
 # Exit status: 0 if every check passed, 1 otherwise.
 #
@@ -30,7 +34,7 @@
 
 set -u -o pipefail
 
-BASE="${1:-${FOOBAR_BASE_URL:-http://127.0.0.1:8080}}"
+BASE="${1:-${SMOKE_BASE_URL:-http://127.0.0.1:8080}}"
 API="$BASE/api"
 RUN_ID="$$-$(date +%s)"
 LOG="${SMOKE_LOG:-${TMPDIR:-/tmp}/foobar-smoke-$(date +%Y%m%d-%H%M%S).log}"

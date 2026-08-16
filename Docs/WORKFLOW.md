@@ -153,8 +153,8 @@ every line, so it conflicts with any large branch that is open at the time. Run 
 written before it get rewritten. #13 is the exception — department-only, so Phase 2 cannot
 invalidate it.
 
-Suggested next, now that #1 is done: **#7** and **#8** (small, and #9 copies their code), then
-**#10**, then **#9**.
+**Next up is #9**, the last of Phase 1's implementation work. Everything ahead of it — #1, #7, #8
+and #10 — is merged.
 
 ---
 

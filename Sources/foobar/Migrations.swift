@@ -63,4 +63,38 @@ enum Migrations {
                 .update()
         }
     }
+
+    /// Step 1 of 3 in giving every employee a department (#18, #20).
+    ///
+    /// The column arrives **nullable**, which is the only way to add it to a table that already
+    /// holds rows — every existing row would violate a `NOT NULL` constraint the moment it was
+    /// applied. `Docs/MIGRATIONS.md` describes the sequence: add nullable, backfill, then
+    /// constrain. `BackfillEmployeeDepartment` and `RequireEmployeeDepartment` are the other two.
+    ///
+    /// **The foreign key is real from the start**, even though the column is optional. That is the
+    /// point of doing this step on its own: referential integrity can be proved before any code
+    /// depends on it. On the SQLite stack this project started with, `.references(...)` would have
+    /// been recorded and silently unenforced unless `PRAGMA foreign_keys = ON` was set per
+    /// connection — see `Docs/POSTGRES.md` for why the database moved before this phase.
+    ///
+    /// `onDelete: .restrict` implements the decision in `Docs/API-DESIGN.md` §2.4. FluentKit
+    /// defaults `onDelete` to `.noAction`, which PostgreSQL also refuses the delete on — the two
+    /// differ only in when the check fires. It is declared explicitly so the intent reads from the
+    /// migration rather than being inferred from a default.
+    struct AddEmployeeDepartment: AsyncMigration {
+        func prepare(on database: any Database) async throws {
+            try await database.schema(Models.Employee.schema)
+                .field(
+                    "department_id", .int32,
+                    .references(Models.Department.schema, "id", onDelete: .restrict)
+                )
+                .update()
+        }
+
+        func revert(on database: any Database) async throws {
+            try await database.schema(Models.Employee.schema)
+                .deleteField("department_id")
+                .update()
+        }
+    }
 }

@@ -208,6 +208,47 @@ failure and rethrowing it as `Abort(.badRequest)`. The error type cannot be made
 `400` that should be returned, and fail the moment this middleware makes them pass. See
 [`TESTING.md`](TESTING.md) → *Step 7*.
 
+## Planned — tracing (#45)
+
+Vapor's `TracingMiddleware` opens a span per request. Registering it is one line, but the
+interesting part is how little else is missing.
+
+### Most of the instrumentation is already here, and inert
+
+Checked against the dependency sources rather than assumed:
+
+| Piece | State |
+| --- | --- |
+| `swift-distributed-tracing` | **Already in `Package.resolved`**, transitively via Vapor. It is the *API* — the tracing equivalent of `swift-log` |
+| `TracingMiddleware` | **Ships with Vapor**, and is already OpenTelemetry-shaped: it cites the OTel HTTP semantic conventions by URL, extracts W3C parent context from inbound headers, and opens the span `ofKind: .server` |
+| Database spans | **FluentKit already emits them.** `DatabaseQuery.withTracing` opens `fluent.query` with collection, operation and summary attributes, and `shouldTrace` defaults to `true` |
+| A backend | **Missing.** Nothing calls `InstrumentationSystem.bootstrap`, so every span above is a no-op |
+
+The API/backend split is exactly `swift-log`'s: code instruments against the API, and one bootstrap
+at startup decides where it goes. Instrumenting is therefore safe long before choosing a vendor —
+without a backend it costs nothing at all.
+
+### What it buys this project
+
+[`FLUENT.md`](FLUENT.md) says to detect N+1 by counting queries per request rather than by how fast
+it feels at these row counts. With a backend bootstrapped, **an N+1 becomes something you can look
+at**: one server span containing N `fluent.query` client spans, where there should be two.
+
+That is a better lesson than the paragraph describing it, and Phase 2 walks straight into the
+problem — so the window matters. #18 as scoped returns `departmentId`, a column already on the row,
+so no N+1 exists yet. The nested-collection route in [`API-DESIGN.md`](API-DESIGN.md) §2.6, or a
+richer `Employee` response, is what introduces one.
+
+### What it costs
+
+- **A collector to export to** — one `docker-compose` service.
+- **A flush at shutdown.** Spans are batched, so an abrupt exit loses them. `ServiceLifecycle`
+  already sequences shutdown here; see also #4.
+- **A decision for the test suite** — bootstrap a no-op, or accept that every run emits spans.
+
+Metrics and logs are separate, and neither is middleware: `swift-metrics` is also already in the
+graph, and log correlation means attaching span IDs to `swift-log` metadata.
+
 ## Candidates, and the condition that would justify each
 
 None of these are needed today. The point of listing them is that the condition is written down, so
@@ -217,7 +258,7 @@ adding one is a decision rather than a habit.
 | --- | --- | --- |
 | `CORSMiddleware` | Yes | A browser client exists. Not before — it is a header policy for browsers and does nothing for server-to-server callers |
 | `ResponseCompressionMiddleware` | Yes | Responses grow past a few KB. List endpoints will get there once pagination (#22) exists and page sizes are real |
-| `TracingMiddleware` | Yes | There is more than one service to correlate across. A single process has logs |
+| `TracingMiddleware` | Yes | **Sooner than the single-service instinct suggests** — see *Planned — tracing* above |
 | `FileMiddleware` | Yes | Static assets need serving. An API has none |
 | Request ID / correlation | No | Logs from concurrent requests become hard to separate. Cheap to add, and the value appears exactly when debugging gets hard |
 | Rate limiting | No | The API is exposed to callers you do not control. Needs shared state, so it stops being a one-file middleware the moment there is more than one instance |

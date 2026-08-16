@@ -3,7 +3,7 @@
 A run through every operation the server exposes, what it should answer, and the three places it
 currently answers something wrong.
 
-**Recorded 2026-08-16**, against `main` with Phase 1 complete. **Every response below is real
+**Recorded 2026-08-16**, against `main` with Phase 1 complete. **Re-verified the same day at `2cac69f`**, after the project was renamed — 29 status assertions replayed, no mismatches, and both automated paths below still pass. **Every response below is real
 output**, captured from a running server rather than written from the spec — the same standard as
 [`POSTGRES.md`](POSTGRES.md). If a response here disagrees with the one you get, the document is
 stale and the server is right.

@@ -69,7 +69,7 @@ swift run CompanyDirectory serve             # http://127.0.0.1:8080
 request. To start from nothing:
 
 ```bash
-docker compose exec -T db psql -U foobar -d foobar \
+docker compose exec -T db psql -U company_directory -d company_directory \
   -c "TRUNCATE employees, departments RESTART IDENTITY CASCADE;"
 ```
 

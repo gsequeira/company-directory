@@ -7,8 +7,9 @@ contains data actually behaves like.
 > **Renamed 2026-08-16.** This project was called `foobar` until the module became
 > `CompanyDirectory`. Captured output below still shows the old name — for example
 > `foobar.Migrations.CreateDepartments` — because it is a record of what actually ran. The
-> database, its user and its volume are still named `foobar` and were deliberately not
-> renamed; see #52.
+> database, its user and its volume were renamed to `company_directory` in the same change.
+> Underscores rather than hyphens, because a hyphenated PostgreSQL identifier must be quoted in
+> every statement that names it. See #52.
 
 **Written 2026-08-14**, from a worked example: adding the unique constraint behind
 `createEmployee`'s 409. That migration failed on the first attempt, which is the reason this
@@ -317,7 +318,7 @@ pre-check under `READ COMMITTED`, but still blocks its insert on the unique inde
 
 ```bash
 # Hold the row uncommitted for five seconds.
-psql -h localhost -p 5432 -U foobar -d foobar <<'SQL' &
+psql -h localhost -p 5432 -U company_directory -d company_directory <<'SQL' &
 BEGIN;
 INSERT INTO departments (name, inserted_at, updated_at) VALUES ('LockTest', now(), now());
 SELECT pg_sleep(5);

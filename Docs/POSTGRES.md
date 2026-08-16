@@ -7,8 +7,9 @@ a verification checkpoint after every step.
 > **Renamed 2026-08-16.** This project was called `foobar` until the module became
 > `CompanyDirectory`. Captured output below still shows the old name — for example
 > `foobar.Migrations.CreateDepartments` — because it is a record of what actually ran. The
-> database, its user and its volume are still named `foobar` and were deliberately not
-> renamed; see #52.
+> database, its user and its volume were renamed to `company_directory` in the same change.
+> Underscores rather than hyphens, because a hyphenated PostgreSQL identifier must be quoted in
+> every statement that names it. See #52.
 
 **Status as of 2026-08-14: steps 0–7 complete.** The application and the test suite both run on
 PostgreSQL, 14/14 tests pass in about 1.5 seconds, and the outputs recorded below are real rather
@@ -108,16 +109,16 @@ services:
   db:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: foobar
-      POSTGRES_PASSWORD: foobar
-      POSTGRES_DB: foobar
+      POSTGRES_USER: company_directory
+      POSTGRES_PASSWORD: company_directory
+      POSTGRES_DB: company_directory
     ports:
       - "5432:5432"
     # Mount /var/lib/postgresql, NOT /var/lib/postgresql/data — see the note below.
     volumes:
-      - foobar_db:/var/lib/postgresql
+      - company_directory_db:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U foobar -d foobar"]
+      test: ["CMD-SHELL", "pg_isready -U company_directory -d company_directory"]
       interval: 2s
       timeout: 3s
       retries: 15
@@ -125,9 +126,9 @@ services:
   db-test:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: foobar
-      POSTGRES_PASSWORD: foobar
-      POSTGRES_DB: foobar_test
+      POSTGRES_USER: company_directory
+      POSTGRES_PASSWORD: company_directory
+      POSTGRES_DB: company_directory_test
     ports:
       - "5433:5432"        # different host port so both servers run at once
     # No *named* volume. The image declares VOLUME /var/lib/postgresql, so Docker still
@@ -138,13 +139,13 @@ services:
     command: >-
       postgres -c fsync=off -c full_page_writes=off -c synchronous_commit=off
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U foobar -d foobar_test"]
+      test: ["CMD-SHELL", "pg_isready -U company_directory -d company_directory_test"]
       interval: 2s
       timeout: 3s
       retries: 15
 
 volumes:
-  foobar_db:
+  company_directory_db:
 ```
 
 Three decisions worth understanding rather than copying:
@@ -194,7 +195,7 @@ Verify:
 ```bash
 docker compose up -d --wait
 docker compose ps            # expect: both services, status "healthy"
-docker compose exec db psql -U foobar -d foobar -c 'SELECT version();'
+docker compose exec db psql -U company_directory -d company_directory -c 'SELECT version();'
 ```
 
 **That is not a connectivity test, and it is important to know why.** `docker compose exec` runs
@@ -206,7 +207,7 @@ you nothing about whether anything on your Mac can reach it. Vapor connects over
 Test the path the application actually uses:
 
 ```bash
-PGPASSWORD=foobar psql -h localhost -p 5432 -U foobar -d foobar \
+PGPASSWORD=company_directory psql -h localhost -p 5432 -U company_directory -d company_directory \
   -tAc "select current_database() || ' @ ' || version();"
 ```
 
@@ -217,10 +218,10 @@ Darwin build, and that difference is the whole point of the check.
 No `psql` on the host? Postgres.app leaves one at
 `/Applications/Postgres.app/Contents/Versions/latest/bin/psql` even when its server is stopped, and
 `brew install libpq` is the other source. Failing that, `docker run --rm postgres:18-alpine psql
-"postgresql://foobar:foobar@host.docker.internal:5432/foobar" -c 'select version();'` routes back
+"postgresql://company_directory:company_directory@host.docker.internal:5432/company_directory" -c 'select version();'` routes back
 out through the host, which exercises the same published port.
 
-### If that connection fails with `role "foobar" does not exist`
+### If that connection fails with `role "company_directory" does not exist`
 
 The role exists — you are talking to a different server. Something else on the machine is bound to
 5432:
@@ -232,7 +233,7 @@ lsof -nP -iTCP:5432 -sTCP:LISTEN
 Postgres.app and a Homebrew `postgresql` service both bind loopback (`127.0.0.1` and `[::1]`), while
 Docker binds the wildcard `*:5432`. macOS permits that pair to coexist, and for a connection to
 `localhost` **the more specific binding wins** — so the native server silently takes the connection
-and rejects it with SQLSTATE `28000`, because it has no `foobar` role. Nothing in the error mentions
+and rejects it with SQLSTATE `28000`, because it has no `company_directory` role. Nothing in the error mentions
 ports, so it reads like a credentials problem.
 
 Two fixes. Stop the native server, if you do not need it — which is the right call once this
@@ -265,7 +266,7 @@ docker volume inspect foobar_foobar_db --format '{{.Name}} -> {{.Mountpoint}}'
 ```
 
 That mountpoint is a path **inside the Linux VM**, not on macOS. Compose prefixes the project
-directory name onto the volume declared in the file, which is why `foobar_db` becomes
+directory name onto the volume declared in the file, which is why `company_directory_db` becomes
 `foobar_foobar_db`.
 
 OrbStack additionally surfaces it on macOS at `~/OrbStack/docker/volumes/foobar_foobar_db`, so you
@@ -281,15 +282,15 @@ port, and nothing about Docker changes how clients reach it.
 | --- | --- | --- |
 | Host | `localhost` | `localhost` |
 | Port | `5432` | `5433` |
-| User | `foobar` | `foobar` |
-| Password | `foobar` | `foobar` |
-| Database | `foobar` | `foobar_test` |
+| User | `company_directory` | `company_directory` |
+| Password | `company_directory` | `company_directory` |
+| Database | `company_directory` | `company_directory_test` |
 
 **SSL must not be set to *require*.** The official image ships no certificates and runs with
 `ssl = off`; use *allow* or *prefer*. Confirm with:
 
 ```bash
-PGPASSWORD=foobar psql -h localhost -p 5432 -U foobar -d foobar -tAc 'show ssl;'
+PGPASSWORD=company_directory psql -h localhost -p 5432 -U company_directory -d company_directory -tAc 'show ssl;'
 ```
 
 Point a client at the test database by all means, but expect nothing to persist: the suite drops
@@ -318,7 +319,7 @@ published port at all. Two forms work, both verified 2026-08-14:
 container directly bypasses that mapping entirely, and both containers listen on `5432` internally.
 
 ```bash
-PGPASSWORD=foobar psql -h db-test.foobar.orb.local -p 5432 -U foobar -d foobar_test
+PGPASSWORD=company_directory psql -h db-test.foobar.orb.local -p 5432 -U company_directory -d company_directory_test
 ```
 
 **Never put these names in committed configuration.** They are an OrbStack feature — they do not
@@ -398,9 +399,9 @@ private func postgresConfiguration() throws -> DatabaseConfigurationFactory {
         configuration: .init(
             hostname: Environment.get("DATABASE_HOST") ?? "localhost",
             port: Environment.get("DATABASE_PORT").flatMap(Int.init) ?? 5432,
-            username: Environment.get("DATABASE_USERNAME") ?? "foobar",
-            password: Environment.get("DATABASE_PASSWORD") ?? "foobar",
-            database: Environment.get("DATABASE_NAME") ?? "foobar",
+            username: Environment.get("DATABASE_USERNAME") ?? "company_directory",
+            password: Environment.get("DATABASE_PASSWORD") ?? "company_directory",
+            database: Environment.get("DATABASE_NAME") ?? "company_directory",
             // Correct for a container on your own machine, and wrong for anything reachable
             // over a network.
             tls: .disable
@@ -467,9 +468,9 @@ Commit a `.env.example` so a fresh clone knows what the knobs are:
 # Defaults match docker-compose.yml. Copy to .env only if you need to change something.
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
-DATABASE_NAME=foobar
-DATABASE_USERNAME=foobar
-DATABASE_PASSWORD=foobar
+DATABASE_NAME=company_directory
+DATABASE_USERNAME=company_directory
+DATABASE_PASSWORD=company_directory
 ```
 
 ---
@@ -523,7 +524,7 @@ HTTP/1.1 409 Conflict
 **Now the part with actual learning value in it:** look at the schema Fluent generated.
 
 ```bash
-docker compose exec db psql -U foobar -d foobar -c '\d departments'
+docker compose exec db psql -U company_directory -d company_directory -c '\d departments'
 ```
 
 ## Result, verified 2026-08-14
@@ -639,9 +640,9 @@ private static func databaseConfiguration() -> DatabaseConfigurationFactory {
         configuration: .init(
             hostname: Environment.get("TEST_DATABASE_HOST") ?? "localhost",
             port: Environment.get("TEST_DATABASE_PORT").flatMap(Int.init) ?? 5433,
-            username: "foobar",
-            password: "foobar",
-            database: "foobar_test",
+            username: "company_directory",
+            password: "company_directory",
+            database: "company_directory_test",
             tls: .disable
         )
     )
@@ -670,7 +671,7 @@ test, drop it. Full isolation, parallelism restored, roughly 50–150ms of overh
 
 Two notes for when you get there: `CREATE DATABASE` cannot take a bound parameter, so build the
 statement with SQLKit's `\(ident:)` interpolation rather than string concatenation; and once it
-works, `CREATE DATABASE … TEMPLATE foobar_test_template` from a pre-migrated template skips
+works, `CREATE DATABASE … TEMPLATE company_directory_test_template` from a pre-migrated template skips
 re-running migrations per test.
 
 ---
@@ -690,7 +691,7 @@ it when the suite is large enough for the wall-clock to matter, not before.
 Then prove the development database was not collateral damage — the whole point of 6a:
 
 ```bash
-PGPASSWORD=foobar psql -h localhost -p 5432 -U foobar -d foobar \
+PGPASSWORD=company_directory psql -h localhost -p 5432 -U company_directory -d company_directory \
   -c '\dt' -c 'select * from departments;'
 ```
 
@@ -698,7 +699,7 @@ Its tables and rows should be exactly as you left them. The test database, by co
 only `_fluent_migrations` left, every other table having been dropped by the final `autoRevert()`:
 
 ```bash
-PGPASSWORD=foobar psql -h localhost -p 5433 -U foobar -d foobar_test -c '\dt'
+PGPASSWORD=company_directory psql -h localhost -p 5433 -U company_directory -d company_directory_test -c '\dt'
 ```
 
 If a test fails, check it against the differences below before assuming the migration broke

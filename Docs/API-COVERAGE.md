@@ -211,5 +211,5 @@ pkill -f '.build/debug/CompanyDirectory'
 `HTTP/1.1 500 Internal Server Error`. The defect is in path-parameter decoding, ahead of any
 database work, so the move off SQLite neither fixed nor worsened it.
 
-Note the database is no longer in-memory. Probing now writes to the `foobar_db` Docker volume and
+Note the database is no longer in-memory. Probing now writes to the `company_directory_db` Docker volume and
 persists; `docker compose down -v` resets it.

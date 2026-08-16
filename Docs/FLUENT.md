@@ -7,8 +7,9 @@ does in `APIHandler`.
 > **Renamed 2026-08-16.** This project was called `foobar` until the module became
 > `CompanyDirectory`. Captured output below still shows the old name — for example
 > `foobar.Migrations.CreateDepartments` — because it is a record of what actually ran. The
-> database, its user and its volume are still named `foobar` and were deliberately not
-> renamed; see #52.
+> database, its user and its volume were renamed to `company_directory` in the same change.
+> Underscores rather than hyphens, because a hyphenated PostgreSQL identifier must be quoted in
+> every statement that names it. See #52.
 
 **Written 2026-08-14**, from working out how to map a unique-constraint violation to a `409`. That
 one line of `catch` turned out to need most of this document to justify, which is a good sign it

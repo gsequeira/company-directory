@@ -169,6 +169,7 @@ point is not to make any of them stop finding things.
 | macOS, every change | `swift test` | ~0.7s warm | Everything ordinary |
 | Linux container, when the risk surface moves | see below | 92s cold, 1–9s warm | Glibc and Foundation divergence, conditional imports, filesystem and process APIs |
 | CI, every push | automatic | minutes | All of the above, in a clean environment, on the record |
+| A running server, by hand | `Scripts/smoke.sh`, or `SMOKE_BASE_URL=… swift test --filter SmokeTests` | ~5s | A real socket, `/health`, and migrations against a database that already has rows — none of which the suite touches. The Swift version additionally decodes into the generated types, so a spec change breaks it at compile time |
 
 [`CI.md`](CI.md) is the playbook for the third layer: how to watch a run, read a failure, reproduce
 it locally, and what goes wrong.

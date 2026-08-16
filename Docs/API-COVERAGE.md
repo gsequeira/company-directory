@@ -139,7 +139,9 @@ Verified against a running server on 2026-08-14:
 | `POST /api/departments` with `{"name":123}` | **500** | 400 |
 
 A client-side typo produces `"Server error"`. `500` is not declared for any operation, so this
-breaks the contract on all seven. The cause is that `swift-openapi-vapor` surfaces request-decoding
+breaks the contract on every one of them. The fix is a middleware; see
+[`MIDDLEWARE.md`](MIDDLEWARE.md) → *Planned — error mapping*, which shows the exact line in
+`ErrorMiddleware.default` responsible. The cause is that `swift-openapi-vapor` surfaces request-decoding
 failures as unhandled errors rather than mapping them to `400`; an error middleware would fix it
 centrally.
 

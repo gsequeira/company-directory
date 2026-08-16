@@ -3,7 +3,11 @@
 A snapshot of how much of `Sources/foobar/openapi.yaml` the suite in
 `Tests/foobarTests/APIHandlerTests.swift` actually exercises, and what it misses.
 
-**Assessed:** 2026-08-14, at commit `15405a2` (14 tests passing). The declared-response tables below
+**Assessed:** 2026-08-14, at commit `15405a2` (14 tests passing). **Partially re-assessed
+2026-08-16** — only the `updateDepartment` rows, when #13 and #16 closed its declared-response gap
+(21 tests passing). Everything else below still dates from the original sweep; a full re-assessment
+is deliberately held until Phase 1 is complete, since #9 changes the employee surface. The
+declared-response tables below
 were re-checked after the move to PostgreSQL and the employee uniqueness migration; both left the
 counts unchanged, but each added a gap — see *Constraint violations surface as 500* and the note on
 `createEmployee`'s 409 below.
@@ -39,7 +43,7 @@ endpoints. Beneath that:
 | --- | --- | --- |
 | The two `401` declarations describe authentication that does not exist, and are asymmetric | Spec defect | [below](#the-two-401s-are-spec-defects-not-test-gaps--needs-addressing) |
 | Malformed input returns `500` instead of `400` on every endpoint | Implementation defect | [below](#undeclared-behaviour-malformed-input-returns-500) |
-| `updateDepartment` 404/409, invalid-input, `Int32` overflow and self-rename tests | Missing tests | [below](#recommended-additions-in-priority-order) |
+| Invalid-input and `Int32` overflow tests. `updateDepartment` 404/409 and self-rename are **done** (#13, #16) | Missing tests | [below](#recommended-additions-in-priority-order) |
 
 ## Declared-response coverage
 
@@ -48,21 +52,29 @@ endpoints. Beneath that:
 | `listDepartments` | 200 | 200 | — |
 | `createDepartment` | 201, 401, 409 | 201, 409 | **401** |
 | `getDepartmentDetail` | 200, 404 | 200, 404 | — |
-| `updateDepartment` | 200, 404, 409 | 200 | **404, 409** |
+| `updateDepartment` | 200, 404, 409 | 200, 404, 409 | — |
 | `deleteDepartment` | 204, 404 | 204, 404 | — |
 | `listEmployees` | 200 | 200 | — |
 | `createEmployee` | 201, 401, 409 | 201, 409 | **401** |
 
-### `updateDepartment` is the weak spot
+### `updateDepartment` was the weak spot — closed 2026-08-16
 
-Three declared responses, one tested. Both missing paths were verified by hand against a running
-server and behave correctly:
+Three declared responses, one tested. Both missing paths had been verified by hand against a running
+server and behaved correctly:
 
 - `PATCH /api/departments/999` → `404`, empty body.
 - `PATCH` renaming a department onto a name another department already holds → `409` with
   `"A department with the name 'Engineering' already exists"`.
 
-So these are missing tests, not bugs. Two tests close the gap.
+They were missing tests rather than bugs, and #13 and #16 closed all three. `updateDepartment` is
+now fully covered against its declared responses.
+
+**What the closing found**, which matters more than the coverage number: the `409` test does **not**
+distinguish which code path produced the conflict. Deleting the entire pre-check from
+`updateDepartment` leaves all 21 tests passing, because the unique index then rejects the `save` and
+the `catch` returns the same `409`. The two paths are indistinguishable from outside, so neither is
+individually pinned. That is #17's territory — see *Findings that outlived their issue* in
+[`ISSUE-LOG.md`](ISSUE-LOG.md).
 
 ### The two `401`s are spec defects, not test gaps — NEEDS ADDRESSING
 
@@ -167,10 +179,11 @@ name, which is a modelling limitation rather than a resolved question.
 a department with an empty name. The spec sets no `minLength`, so this is technically conformant,
 but it is unlikely to be intended. Fix in the spec rather than the handler if it is not.
 
-**Self-rename is untested.** `PATCH` on a department using its own current name correctly returns
-`200` rather than `409`. That behaviour depends entirely on the `.filter(\.$id != (try
-existingDepartment.requireID()))` line in `updateDepartment` — delete that line and the whole suite
-still passes. This is the "assertion that cannot fail" problem from Step 5 of [`TESTING.md`](TESTING.md),
+**~~Self-rename is untested.~~ Tested since 2026-08-16 (#16).** `PATCH` on a department using its
+own current name correctly returns `200` rather than `409`. That behaviour depends entirely on the
+`.filter(\.$id != (try existingDepartment.requireID()))` line in `updateDepartment` — deleting that
+line used to leave the whole suite passing. It now fails exactly one test, with `409` where `200`
+was expected. This is the "assertion that cannot fail" problem from Step 5 of [`TESTING.md`](TESTING.md),
 one level up: a whole branch with no test holding it in place.
 
 **The employee resource is a stub.** The spec declares only `GET` and `POST` on `/employees` —
@@ -180,8 +193,7 @@ the department ones for reasons that have nothing to do with test quality.
 
 ## Recommended additions, in priority order
 
-1. **`updateDepartment` 404 and 409.** Closes the declared-response gap. Both verified to behave
-   correctly, so these land green.
+1. ~~**`updateDepartment` 404 and 409.**~~ **Done 2026-08-16 (#13)**, landed green as expected.
 2. **One invalid-input test per shape** — bad path parameter, missing required field, malformed
    JSON body. These will **fail** until the `400` mapping exists. ~~Decide whether to land them red
    as executable documentation of the defect, or hold them until the middleware is written.~~
@@ -190,7 +202,8 @@ the department ones for reasons that have nothing to do with test quality.
    [`TESTING.md`](TESTING.md) → *Step 7*.
 3. **`Int32.max + 1` as a regression test.** Given this used to take the process down, it earns a
    permanent guard regardless of which status it settles on.
-4. **Self-rename returns `200`.** Makes the `$id !=` filter load-bearing.
+4. ~~**Self-rename returns `200`.**~~ **Done 2026-08-16 (#16)**, and the filter is now load-bearing:
+   deleting it fails that test and only that test.
 
 ## Reproducing this assessment
 

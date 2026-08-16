@@ -92,6 +92,7 @@ and running the same job twice for one change.
 gh issue develop 3 --checkout            # branch, linked to the issue
 docker compose up -d --wait              # the suite needs db-test
 # ... work ...
+swift format lint --strict -r Sources Tests Package.swift   # CI gates on this too
 swift build && swift test                # green locally first
 git push -u origin HEAD
 gh pr create --fill --body "Fixes #3"    # opening the PR triggers CI
@@ -227,6 +228,7 @@ whose tables `autoRevert()` would then drop.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| Step *Check formatting* fails | The tree was not formatted before pushing | Run `swift format --in-place -r Sources Tests Package.swift`, commit, push. The formatter is idempotent, so running it is always safe |
 | Step *Verify the toolchain* fails with "Toolchain drift" | `.swift-version` was bumped and the `container:` tag was not | Update the tag in `ci.yml` to match. The error message names the file |
 | `swift: not found`, or the build fails immediately | Someone changed the image to a `-slim` tag | Slim variants ship the runtime only, with no compiler. Use the plain tag |
 | Job never starts, hangs at *Initialize containers* | The service container never reported healthy | Check the `--health-cmd`. `pg_isready` must name a user and database that exist |

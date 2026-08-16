@@ -69,7 +69,7 @@ func configureDatabase(
             Migrations.CreateDepartments(),
             Migrations.CreateEmployees(),
             Migrations.AddEmployeeNameUniqueness(),
-            Migrations.AddEmployeeDepartment()
+            Migrations.AddEmployeeDepartment(),
         ])
 
         try await application.autoMigrate()

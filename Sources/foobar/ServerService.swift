@@ -1,7 +1,7 @@
 import Fluent
-import Vapor
-import ServiceLifecycle
 import OpenAPIVapor
+import ServiceLifecycle
+import Vapor
 
 /// Configures the database, routes and OpenAPI handlers, then returns the server as a
 /// `Service` ready to be run by a `ServiceGroup`.

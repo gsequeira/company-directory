@@ -92,5 +92,14 @@ jobs:
           restore-keys: swiftpm-${{ runner.os }}-
 
       # `swift test` builds the executable target too, so there is no separate build step.
+      - name: Check formatting
+        # Runs before the tests: it takes under a second, needs no database, and a formatting
+        # failure is quicker to act on than a compile-and-test cycle. `--strict` is what makes
+        # this a gate — it exits non-zero when there is any finding at all.
+        #
+        # swift-format ships with the toolchain, so the version is pinned by the same
+        # `.swift-version` check above. Nothing extra to install.
+        run: swift format lint --strict --recursive Sources Tests Package.swift
+
       - name: Run tests
         run: swift test

@@ -62,7 +62,9 @@ struct TestHelpers {
 }
 
 extension Application {
-    func sendRequest<Body: Encodable>(_ method: HTTPMethod, _ path: String, body: Body) async throws -> TestingHTTPResponse {
+    func sendRequest<Body: Encodable>(_ method: HTTPMethod, _ path: String, body: Body) async throws
+        -> TestingHTTPResponse
+    {
         try await sendRequest(method, path) { req in
             req.headers.contentType = .json
             try req.content.encode(body, as: .json)

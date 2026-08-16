@@ -148,6 +148,75 @@ struct APIHandlerIntegrationTests {
         }
     }
 
+    @Test("PATCH /api/departments/{departmentId} returns not found for non-existent department")
+    func testUpdateDepartmentNotFound() async throws {
+        try await TestHelpers.withApplication { application in
+            let updateRequest = Components.Schemas.UpdateDepartmentRequest(name: "Nowhere")
+            let response = try await application.sendRequest(.PATCH, "/api/departments/999",
+                body: updateRequest)
+
+            #expect(response.status == .notFound)
+
+            // Same reasoning as getDepartmentDetail's 404: an empty body proves the request
+            // reached updateDepartment rather than falling through the router.
+            #expect(response.body.readableBytes == 0)
+        }
+    }
+
+    @Test("PATCH /api/departments/{departmentId} returns conflict when renaming onto a taken name")
+    func testUpdateDepartmentDuplicateName() async throws {
+        try await TestHelpers.withApplication { application in
+            let existingName = "Engineering"
+
+            let firstResponse = try await application.sendRequest(.POST, "/api/departments",
+                body: Components.Schemas.CreateDepartmentRequest(name: existingName))
+            try #require(firstResponse.status == .created)
+
+            let secondResponse = try await application.sendRequest(.POST, "/api/departments",
+                body: Components.Schemas.CreateDepartmentRequest(name: "Customer Support"))
+            try #require(secondResponse.status == .created)
+            let secondDepartment = try secondResponse.content.decode(Components.Schemas.Department.self)
+
+            // Rename the second department onto the first one's name.
+            let updateResponse = try await application.sendRequest(
+                .PATCH, "/api/departments/\(secondDepartment.id)",
+                body: Components.Schemas.UpdateDepartmentRequest(name: existingName))
+
+            #expect(updateResponse.status == .conflict)
+            #expect(updateResponse.headers.contentType == .json)
+
+            let conflictError = try updateResponse.content.decode(Components.Schemas.ConflictError.self)
+            #expect(conflictError.error == true)
+            #expect(conflictError.reason.contains(existingName))
+        }
+    }
+
+    @Test("PATCH /api/departments/{departmentId} allows a department to keep its own name")
+    func testUpdateDepartmentSelfRename() async throws {
+        try await TestHelpers.withApplication { application in
+            let name = "Research and Development"
+
+            let createResponse = try await application.sendRequest(.POST, "/api/departments",
+                body: Components.Schemas.CreateDepartmentRequest(name: name))
+            try #require(createResponse.status == .created)
+            let createdDepartment = try createResponse.content.decode(Components.Schemas.Department.self)
+
+            // Renaming a department to the name it already has must not conflict with itself.
+            // This is the only test holding the `.filter(\.$id != …)` line in updateDepartment
+            // in place — without it, that line can be deleted and the whole suite still passes.
+            let updateResponse = try await application.sendRequest(
+                .PATCH, "/api/departments/\(createdDepartment.id)",
+                body: Components.Schemas.UpdateDepartmentRequest(name: name))
+
+            #expect(updateResponse.status == .ok)
+            #expect(updateResponse.headers.contentType == .json)
+
+            let updatedDepartment = try updateResponse.content.decode(Components.Schemas.Department.self)
+            #expect(updatedDepartment.id == createdDepartment.id)
+            #expect(updatedDepartment.name == name)
+        }
+    }
+
     @Test("DELETE /api/departments/{departmentId} deletes existing department successfully")
     func testDeleteDepartmentSuccess() async throws {
         try await TestHelpers.withApplication { application in

@@ -134,6 +134,35 @@ reasons behind it rather than one.
 
 See issue #6 for the formatting work itself.
 
+## Moving the project directory invalidates the module cache
+
+Renaming the working directory on 2026-08-16 broke the build, and the message names the cause
+exactly:
+
+```
+error: precompiled file '.../company-directory/.build/.../ModuleCache/..._Builtin_stdbool.pcm'
+       was compiled with module cache path '/Users/glenn/Developer/Vapor/foobar/.build/...'
+       but the path is currently '/Users/glenn/Developer/Vapor/company-directory/.build/...'
+```
+
+**Precompiled modules record the absolute path they were built under.** `.build` moves with the
+directory, so every `.pcm` in it now disagrees with where it sits. The failure surfaces as
+`fatal error: could not build module '_DarwinFoundation1'` — which reads like a broken toolchain
+rather than a moved folder.
+
+The fix is narrow. Delete only the module cache, not the whole build directory:
+
+```bash
+find .build -maxdepth 3 -type d -name ModuleCache -exec rm -rf {} +
+```
+
+That cost seconds and kept the rest of the 5.6 GB build tree. `rm -rf .build` also works and costs a
+full cold rebuild for no extra benefit.
+
+Same family as the corruption described above: `.build` holds absolute paths and compiler-specific
+artefacts, so anything that changes the path or the compiler can invalidate it while leaving it
+looking intact.
+
 ## Relationship to CI
 
 `.swift-version` is the contract between a development machine and the runner. When CI is added,

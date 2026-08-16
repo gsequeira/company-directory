@@ -213,7 +213,7 @@ You can run the Linux check without waiting on GitHub:
 
 ```bash
 docker compose up -d --wait db-test
-docker run --rm --network foobar_default \
+docker run --rm --network company-directory_default \
   -e TEST_DATABASE_HOST=db-test -e TEST_DATABASE_PORT=5432 \
   -v "$PWD":/src -w /src -v /tmp/company-directory-linux-build:/build \
   swift:6.3.3 swift test --scratch-path /build
@@ -224,7 +224,7 @@ Two details carry the weight:
 - **`--scratch-path` is not tidiness.** Without it the container writes Linux modules into your
   macOS `.build`, which is the corruption in [`TOOLCHAIN.md`](TOOLCHAIN.md) with an extra
   dimension added. Point it at a directory outside the repository.
-- **`--network foobar_default`** puts the build container on the same network as the compose
+- **`--network company-directory_default`** puts the build container on the same network as the compose
   services, so `db-test:5432` resolves — the *container* port, not the published 5433. That is
   structurally identical to what a GitHub service container provides, which makes this the honest
   rehearsal for CI rather than an approximation of it.

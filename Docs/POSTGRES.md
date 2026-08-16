@@ -257,19 +257,19 @@ Not in the image. Worth untangling, because the distinction decides what is safe
 | | What it is | Lifetime |
 | --- | --- | --- |
 | **Image** — `postgres:18-alpine` | A read-only template pulled from Docker Hub. Identical on every machine, holds no data, never written to | Until you `docker rmi` it. Re-pulling changes nothing about your data |
-| **Container** — `foobar-db-1` | A running instance of that image, plus a thin writable layer | Dies with the container |
-| **Volume** — `foobar_foobar_db` | Where PostgreSQL's data directory actually is | Outlives the container. Only `docker compose down -v` removes it |
+| **Container** — `company-directory-db-1` | A running instance of that image, plus a thin writable layer | Dies with the container |
+| **Volume** — `company-directory_company_directory_db` | Where PostgreSQL's data directory actually is | Outlives the container. Only `docker compose down -v` removes it |
 
 ```bash
-docker volume inspect foobar_foobar_db --format '{{.Name}} -> {{.Mountpoint}}'
-# foobar_foobar_db -> /var/lib/docker/volumes/foobar_foobar_db/_data
+docker volume inspect company-directory_company_directory_db --format '{{.Name}} -> {{.Mountpoint}}'
+# company-directory_company_directory_db -> /var/lib/docker/volumes/company-directory_company_directory_db/_data
 ```
 
 That mountpoint is a path **inside the Linux VM**, not on macOS. Compose prefixes the project
 directory name onto the volume declared in the file, which is why `company_directory_db` becomes
-`foobar_foobar_db`.
+`company-directory_company_directory_db`.
 
-OrbStack additionally surfaces it on macOS at `~/OrbStack/docker/volumes/foobar_foobar_db`, so you
+OrbStack additionally surfaces it on macOS at `~/OrbStack/docker/volumes/company-directory_company_directory_db`, so you
 can browse it. Do not edit anything there while the server is running — PostgreSQL owns those files
 and expects exclusive control. The supported way in is the network port.
 
@@ -299,11 +299,33 @@ and recreates its tables on every run.
 ### OrbStack only: reaching containers by name
 
 OrbStack gives every container a DNS name on the host, so you can connect without going through a
-published port at all. Two forms work, both verified 2026-08-14:
+published port at all. Two forms, both verified 2026-08-14:
+
+> **Re-verified 2026-08-16 after the rename**, with the project name now `company-directory`.
+> Hyphens in the project name are fine.
+
+**A trap found while re-verifying.** These names failed to resolve at first, which looked like an
+OrbStack DNS problem and was not. The rename left the old project's containers running and holding
+port `5432`, so the first `docker compose up` failed part-way through — and the containers it had
+already created came up **attached to no network at all**:
 
 ```
-<service>.<project>.orb.local     db.foobar.orb.local        db-test.foobar.orb.local
-<container-name>.orb.local        foobar-db-1.orb.local      foobar-db-test-1.orb.local
+networks: []
+ports: {}
+```
+
+They still reported `healthy`, because the healthcheck is `pg_isready` running *inside* the
+container against its own socket. It never touches the network, so it passes on a container nothing
+can reach. `docker compose ps` showed both as running and healthy while every name-based connection
+failed.
+
+`docker compose down` followed by `up` fixed it. The lesson generalises past OrbStack: **a passing
+healthcheck says the process is alive, not that anything can reach it.** When name resolution fails
+against a healthy container, inspect its networks before suspecting DNS.
+
+```
+<service>.<project>.orb.local     db.company-directory.orb.local        db-test.company-directory.orb.local
+<container-name>.orb.local        company-directory-db-1.orb.local      company-directory-db-test-1.orb.local
 ```
 
 **Use the container's port, not the host mapping.** This is the part that catches people:
@@ -311,15 +333,15 @@ published port at all. Two forms work, both verified 2026-08-14:
 | Address | Port | Works |
 | --- | --- | --- |
 | `localhost` | `5432` / `5433` | Yes — the published mappings |
-| `db.foobar.orb.local` | `5432` | Yes |
-| `db-test.foobar.orb.local` | **`5432`** | Yes — *not* 5433 |
+| `db.company-directory.orb.local` | `5432` | Yes |
+| `db-test.company-directory.orb.local` | **`5432`** | Yes — *not* 5433 |
 | either `.orb.local` name | `5433` | **Connection refused** |
 
 `5433` only ever existed as a host-side mapping to avoid a collision on `5432`. Addressing the
 container directly bypasses that mapping entirely, and both containers listen on `5432` internally.
 
 ```bash
-PGPASSWORD=company_directory psql -h db-test.foobar.orb.local -p 5432 -U company_directory -d company_directory_test
+PGPASSWORD=company_directory psql -h db-test.company-directory.orb.local -p 5432 -U company_directory -d company_directory_test
 ```
 
 **Never put these names in committed configuration.** They are an OrbStack feature — they do not

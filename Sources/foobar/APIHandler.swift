@@ -4,12 +4,29 @@ import OpenAPIRuntime
 import OpenAPIVapor
 import Vapor
 
+/// Implements `APIProtocol`, the protocol generated from `openapi.yaml`. Every route is served
+/// under the `/api` base path declared by the spec's `servers` entry.
+///
+/// Each handler below carries its route and its declared responses, so the contract is visible
+/// without opening the spec. **`openapi.yaml` remains the source of truth** — these comments
+/// restate it for the reader, and must be updated when a declaration changes.
+///
+/// Two things are true of every handler and are therefore not repeated on each one:
+///
+/// - **Malformed input returns `500`, not `400`.** `swift-openapi-vapor` surfaces request-decoding
+///   failures as unhandled errors. `500` is declared nowhere, so this breaks the contract on all
+///   seven operations. Tracked by #2; see `Docs/API-COVERAGE.md`.
+/// - **The two `401` declarations are unreachable.** No authentication exists anywhere in the
+///   project, so no code path can produce one. Tracked by #11.
 struct APIHandler: APIProtocol {
     let database: Database
     init(database: Database) {
         self.database = database
     }
 
+    /// `GET /api/departments`
+    ///
+    /// - `200` — every department, in no guaranteed order (#3).
     func listDepartments(_ input: Operations.ListDepartments.Input) async throws -> Operations.ListDepartments.Output {
         let departments = try await Models.Department.query(on: database).all()
 
@@ -20,6 +37,12 @@ struct APIHandler: APIProtocol {
         return .ok(.init(body: .json(departmentList)))
     }
 
+    /// `POST /api/departments`
+    ///
+    /// - `201` — the created department.
+    /// - `401` — declared by the spec, unreachable in practice (#11).
+    /// - `409` — a department already holds that name. Returned from two places: the pre-check
+    ///   below, and the `catch` that handles losing the race to another request.
     func createDepartment(_ input: Operations.CreateDepartment.Input) async throws -> Operations.CreateDepartment.Output {
         switch input.body {
         case .json(let createRequest):
@@ -70,6 +93,11 @@ struct APIHandler: APIProtocol {
         }
     }
 
+    /// `GET /api/departments/{departmentId}`
+    ///
+    /// - `200` — the department.
+    /// - `404` — no department has that id. Sent with an empty body, which is what distinguishes
+    ///   it from a routing `404`.
     func getDepartmentDetail(_ input: Operations.GetDepartmentDetail.Input) async throws -> Operations.GetDepartmentDetail.Output {
         let departmentId = input.path.departmentId
 
@@ -82,6 +110,12 @@ struct APIHandler: APIProtocol {
         return .ok(.init(body: .json(departmentResponse)))
     }
 
+    /// `PATCH /api/departments/{departmentId}`
+    ///
+    /// - `200` — the updated department. Also the answer when a department is renamed to the name
+    ///   it already has, which is what the `$id !=` filter below exists for.
+    /// - `404` — no department has that id.
+    /// - `409` — another department already holds that name.
     func updateDepartment(_ input: Operations.UpdateDepartment.Input) async throws -> Operations.UpdateDepartment.Output {
         let departmentId = input.path.departmentId
 
@@ -128,6 +162,13 @@ struct APIHandler: APIProtocol {
         }
     }
 
+    /// `DELETE /api/departments/{departmentId}`
+    ///
+    /// - `204` — deleted, no body.
+    /// - `404` — no department has that id.
+    ///
+    /// What happens to a department's employees is undecided until Phase 2 gives them a
+    /// relationship (#19).
     func deleteDepartment(_ input: Operations.DeleteDepartment.Input) async throws -> Operations.DeleteDepartment.Output {
         let departmentId = input.path.departmentId
 
@@ -140,6 +181,9 @@ struct APIHandler: APIProtocol {
         return .noContent(.init())
     }
 
+    /// `GET /api/employees`
+    ///
+    /// - `200` — every employee, in no guaranteed order (#3).
     func listEmployees(_ input: Operations.ListEmployees.Input) async throws -> Operations.ListEmployees.Output {
         let employees = try await Models.Employee.query(on: database).all()
 
@@ -150,6 +194,16 @@ struct APIHandler: APIProtocol {
         return .ok(.init(body: .json(employeeList)))
     }
 
+    /// `POST /api/employees`
+    ///
+    /// - `201` — the created employee.
+    /// - `401` — declared by the spec, unreachable in practice (#11).
+    /// - `409` — an employee already has that first and last name, backed by the unique constraint
+    ///   from `Migrations.AddEmployeeNameUniqueness`. Whether names *should* be unique is a
+    ///   modelling limitation kept deliberately; see `Docs/API-DESIGN.md` §1.2 and #25.
+    ///
+    /// There is no `GET`, `PATCH` or `DELETE` for a single employee yet — the resource is
+    /// write-once until #9 adds `/employees/{employeeId}`.
     func createEmployee(_ input: Operations.CreateEmployee.Input) async throws -> Operations.CreateEmployee.Output {
         switch input.body {
         case .json(let createRequest):

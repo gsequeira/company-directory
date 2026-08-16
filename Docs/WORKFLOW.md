@@ -354,6 +354,8 @@ Before opening the pull request:
 - [ ] New behaviour has a test, and that test has been seen to fail.
 - [ ] Docs updated where the change contradicts them. A stale doc is worse than a missing one.
 - [ ] No test count written into an instruction — see *Numbers rot, records do not* below.
+- [ ] If a response declaration changed in `openapi.yaml`, the handler's `///` comment changed with
+      it. They restate the spec deliberately; the spec stays the source of truth.
 - [ ] Tooling changes are in their own commit.
 - [ ] PR body says `Fixes #N`, so merging closes the issue.
 

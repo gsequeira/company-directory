@@ -133,6 +133,39 @@ At that point the choice is:
 None is free. The comment in `APIHandler` names the hazard so it is not discovered by a confused
 user.
 
+## Why `model.id` is optional, and what to do about it
+
+`@ID var id: Int?` is optional for a real reason: the database assigns the value, so between `init`
+and a successful `save` there genuinely is no id. The type is honest. What is dishonest is
+`model.id!` at the call site, which asserts an invariant — "Fluent has populated this by now" —
+that nothing states and the compiler cannot check.
+
+FluentKit already ships the answer, at `Model.swift:22`:
+
+```swift
+public func requireID() throws -> IDValue {
+    guard let id = self.id else { throw FluentError.idRequired }
+    return id
+}
+```
+
+**The difference is not stylistic.** A failed force unwrap is a *trap*, and a trap aborts the
+process — in a server that kills every in-flight request on the instance, not just the one holding
+the bad model. `requireID()` throws, Vapor's error middleware answers `500`, and the server keeps
+serving. Restoring `id!` under the schema-conversion tests demonstrates it directly:
+
+```
+foobar/SchemaConversions.swift:22: Fatal error: Unexpectedly found nil while unwrapping an Optional
+error: Process ... exited with unexpected signal code 5
+```
+
+The test *process* died rather than a test failing.
+
+`Sources/foobar/SchemaConversions.swift` is now the single place a model id is unwrapped. The
+conversions are initializers on the **schema** type rather than a `toSchema()` method on the model,
+so the dependency points from the generated API layer at the domain model and never back —
+regenerating the spec cannot ripple into `Models.swift`.
+
 ## The N+1 problem, which Phase 2 walks straight into
 
 An ORM makes the expensive thing look identical to the cheap thing at the call site. That is its

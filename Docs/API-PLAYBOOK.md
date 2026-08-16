@@ -1,6 +1,6 @@
 # Exercising the API by hand
 
-A run through every operation the server exposes, what it should answer, and the four places it
+A run through every operation the server exposes, what it should answer, and the three places it
 currently answers something wrong.
 
 **Recorded 2026-08-16**, against `main` with Phase 1 complete. **Every response below is real
@@ -13,6 +13,50 @@ Companion documents: [`API-DESIGN.md`](API-DESIGN.md) is what the API *should* c
 [`CI.md`](CI.md) is the equivalent playbook for the build.
 
 `http` is [HTTPie](https://httpie.io). Every command assumes `:8080/api` as the base.
+
+## What there is to exercise
+
+Every status the spec declares, by entity. All of them are demonstrated below.
+
+### Departments
+
+| Operation | Status | Meaning |
+| --- | --- | --- |
+| `GET /api/departments` | `200` | The list, possibly empty |
+| `POST /api/departments` | `201` | Created; body carries the assigned `id` |
+| | `409` | A department already holds that name |
+| `GET /api/departments/{id}` | `200` | The department |
+| | `404` | No department with that id; empty body |
+| `PATCH /api/departments/{id}` | `200` | Updated, or unchanged if the patch was empty |
+| | `404` | No department with that id |
+| | `409` | Another department already holds that name |
+| `DELETE /api/departments/{id}` | `204` | Deleted; no body |
+| | `404` | No department with that id |
+
+### Employees
+
+| Operation | Status | Meaning |
+| --- | --- | --- |
+| `GET /api/employees` | `200` | The list, possibly empty |
+| `POST /api/employees` | `201` | Created; body carries the assigned `id` |
+| | `409` | An employee already has that first and last name |
+| `GET /api/employees/{id}` | `200` | The employee |
+| | `404` | No employee with that id; empty body |
+| `PATCH /api/employees/{id}` | `200` | Updated, or unchanged if the patch was empty |
+| | `404` | No employee with that id |
+| | `409` | The resulting first and last name are already taken |
+| `DELETE /api/employees/{id}` | `204` | Deleted; no body |
+| | `404` | No employee with that id |
+
+### Outside the specification
+
+| Operation | Status | Note |
+| --- | --- | --- |
+| `GET /health` | `200` | Registered outside the OpenAPI transport, so no `/api` prefix |
+| Any operation, malformed input | `500` | Undeclared and incorrect; should be `400` (#2) |
+
+Twenty declared statuses across ten operations, and every one of them has an automated test as well
+— see [`API-COVERAGE.md`](API-COVERAGE.md).
 
 ## Start it
 
@@ -32,8 +76,7 @@ docker compose exec -T db psql -U foobar -d foobar \
 `RESTART IDENTITY` is what makes the ids below reproducible; `CASCADE` is needed because
 `employees.department_id` references `departments`.
 
-**Check it is alive.** `/health` is registered outside the OpenAPI transport, which is why it has no
-`/api` prefix:
+`/health` is registered outside the OpenAPI transport and therefore has no `/api` prefix:
 
 ```console
 $ http GET :8080/health
@@ -51,7 +94,7 @@ HTTP/1.1 201 Created
 { "id" : 1, "name" : "Engineering" }
 ```
 
-`201` with a body, because the client needs the server-assigned `id`.
+`201` carries a body because the client needs the server-assigned `id`.
 
 ```console
 $ http POST :8080/api/departments name=Engineering
@@ -60,8 +103,8 @@ HTTP/1.1 409 Conflict
 { "error" : true, "reason" : "A department with the name 'Engineering' already exists" }
 ```
 
-Worth knowing: that `409` can come from either the pre-check in the handler *or* the unique index
-catching a lost race, and **nothing from outside can tell which** — see #17.
+This `409` may originate either from the pre-check in the handler or from the unique index
+rejecting a write that lost a race. The two are indistinguishable from outside; see #17.
 
 ### Read
 
@@ -74,9 +117,9 @@ HTTP/1.1 404 Not Found
 content-length: 0
 ```
 
-**The empty body is the point.** A routing 404 — a path that matches nothing — carries Vapor's
-`{"error":true,"reason":"Not Found"}`. An empty body proves the request reached the handler and the
-row was absent. The test suite asserts on exactly this.
+The empty body distinguishes this from a routing 404, which carries Vapor's
+`{"error":true,"reason":"Not Found"}`. An empty body therefore indicates the request reached the
+handler and no row matched. The test suite asserts on this difference.
 
 ### Update, including the three cases worth checking
 
@@ -85,21 +128,21 @@ $ http PATCH :8080/api/departments/2 name="Sales and Marketing"
 { "id" : 2, "name" : "Sales and Marketing" }
 ```
 
-**Renaming to the name it already has must not conflict with itself:**
+Renaming to the name already held returns `200` rather than conflicting with itself:
 
 ```console
 $ http PATCH :8080/api/departments/2 name="Sales and Marketing"
 HTTP/1.1 200 OK
 ```
 
-**Renaming onto a name another department holds must:**
+Renaming onto a name another department holds returns `409`:
 
 ```console
 $ http PATCH :8080/api/departments/2 name=Engineering
 { "error" : true, "reason" : "A department with the name 'Engineering' already exists" }
 ```
 
-**An empty patch changes nothing and returns `200`:**
+An empty patch changes nothing and returns `200`:
 
 ```console
 $ echo '{}' | http PATCH :8080/api/departments/2 Content-Type:application/json
@@ -111,9 +154,8 @@ HTTP/1.1 200 OK
 That is the decision in [`API-DESIGN.md`](API-DESIGN.md) §1.3 — `PATCH` is a partial update, so a
 body with no fields is a coherent request meaning "change nothing".
 
-**Note `echo '{}' |` rather than `--ignore-stdin`.** HTTPie's `--ignore-stdin` discards a piped
-body, so the request goes out with none at all — which is a *different* case and answers `500`. That
-mistake is easy to make and looks like a bug in the server.
+Use `echo '{}' |` rather than `--ignore-stdin`. HTTPie's `--ignore-stdin` discards a piped body, so
+the request is sent with no body at all. That is a different case and returns `500`.
 
 ### Delete
 
@@ -125,8 +167,8 @@ $ http GET :8080/api/departments/2
 HTTP/1.1 404 Not Found
 ```
 
-`204` with no body: there is nothing meaningful to return. Read it back rather than trusting the
-status.
+`204` carries no body. Confirm the deletion by reading the resource back rather than relying on the
+status alone.
 
 ## Employees
 
@@ -140,39 +182,50 @@ $ http POST :8080/api/employees firstName=Ada lastName=Lovelace
 { "error" : true, "reason" : "An employee named 'Ada Lovelace' already exists" }
 ```
 
-Uniqueness is on the **pair**, backed by `Migrations.AddEmployeeNameUniqueness`. Two people may
-share a first name; they may not share both. That is a deliberate modelling limitation — see
-§1.2 and #25.
+Uniqueness applies to the pair, enforced by `Migrations.AddEmployeeNameUniqueness`: two employees
+may share a first name but not both names. This is a deliberate modelling limitation; see §1.2 and
+#25.
 
-**Patching one field leaves the other alone:**
+Patching one field leaves the other unchanged:
 
 ```console
 $ http PATCH :8080/api/employees/1 firstName=Augusta
 { "firstName" : "Augusta", "id" : 1, "lastName" : "Lovelace" }
 ```
 
-**And the conflict check uses the resulting pair, not the supplied fields:**
+The conflict check uses the resulting pair rather than the supplied fields:
 
 ```console
 $ http PATCH :8080/api/employees/2 firstName=Augusta lastName=Lovelace
 { "error" : true, "reason" : "An employee named 'Augusta Lovelace' already exists" }
 ```
 
-Sending only `firstName=Augusta` to employee 2 would collide just the same, because the check
-combines it with the stored last name. That is the subtle half of partial update.
+Sending only `firstName=Augusta` to employee 2 collides identically: the check combines the
+supplied field with the stored one before querying.
 
 ```console
 $ http DELETE :8080/api/employees/2
 HTTP/1.1 204 No Content
 ```
 
-**No `departmentId` appears anywhere.** The column exists in the database with a live foreign key
-(#18 step 1), but nothing in the API reads or writes it yet.
+All three single-employee operations return `404` with an empty body for an id that does not exist:
+
+```console
+$ http GET    :8080/api/employees/999          → 404, content-length: 0
+$ http PATCH  :8080/api/employees/999 firstName=Nobody   → 404, content-length: 0
+$ http DELETE :8080/api/employees/999          → 404, content-length: 0
+```
+
+`departmentId` does not appear in any response. The column exists in the database with an enforced
+foreign key (#18, step 1), but no operation reads or writes it yet.
 
 ## Where it answers wrongly
 
-A playbook that only shows the happy path is marketing. These are real, reproducible, and each has
-an issue.
+Three reproducible cases where the response does not match the contract. Each has an open issue.
+
+They are recorded here so that a reader who receives a `500` can tell whether it is a known defect
+or a malformed request of their own. Authentication is covered separately below: its absence is not
+a defect, since the specification does not ask for it.
 
 ### Malformed input returns `500` (#2)
 
@@ -186,7 +239,7 @@ $ echo '{"name":123}'  | http POST :8080/api/departments Content-Type:applicatio
 $ printf '{"name":'    | http POST :8080/api/departments Content-Type:application/json → 500
 ```
 
-**And the body leaks internals.** 671 bytes of decoder detail:
+The body also exposes internal detail — 671 bytes of it:
 
 ```json
 {"error":true,"reason":"Server error - cause description: 'An error occurred while attempting
@@ -194,13 +247,13 @@ to parse the request: DecodingError: typeMismatch Int32 - at : Failed to convert
 requested type. (underlying error: <nil>).', ...
 ```
 
-That is `ErrorMiddleware` in a non-release build — see [`MIDDLEWARE.md`](MIDDLEWARE.md) →
-*Planned — error mapping* for the four lines of Vapor responsible. In a release build the reason
-becomes `"Something went wrong."`, so the status is the defect that survives either way.
+This is `ErrorMiddleware` in a non-release build; see [`MIDDLEWARE.md`](MIDDLEWARE.md) →
+*Planned — error mapping* for the responsible code. In a release build the reason becomes
+`"Something went wrong."`. The incorrect status remains in both builds.
 
-The `> Int32.max` case is worth its own note: it used to **crash the process**. Declaring
-`format: int32` in the spec moved the failure into parsing, so it now returns the wrong status
-instead of taking the server down. #15 exists to keep it that way.
+The `> Int32.max` case previously terminated the process. Declaring `format: int32` in the spec
+moved the failure into parameter parsing, so it now returns an incorrect status rather than exiting.
+#15 covers a regression test for this.
 
 ### Empty names are accepted (#12)
 
@@ -220,14 +273,18 @@ spec, not the handler.
 PostgreSQL returns, which is stable enough to be misleading and not stable enough to rely on. Do not
 write assertions against position until #3 lands.
 
-### There is no authentication
+## Not wrong, but absent: authentication
 
-Every request above succeeded without a credential, because none exists. The spec declares `401` on
-two of the ten operations and can produce it on none of them — asymmetric as well as unimplemented,
-which is why #11 deletes both declarations rather than spreading them. #24 is the feature itself,
-and [`MIDDLEWARE.md`](MIDDLEWARE.md) is how it gets wired.
+Every request above succeeded without a credential, because none exists.
 
-There is nothing to test here. It is listed so the absence is deliberate rather than an oversight.
+The spec used to declare `401` on two of the ten operations and could produce it on none — a
+response no code path could return, and asymmetric besides, since it claimed creating a department
+needed authentication while deleting one did not. **#11 deleted both declarations**, so the contract
+now describes the server that exists rather than one that does not. #24 is the feature itself, and
+[`MIDDLEWARE.md`](MIDDLEWARE.md) is how it gets wired.
+
+There is nothing to exercise. The section exists to record that the absence is intentional and
+tracked.
 
 ## Cleaning up
 

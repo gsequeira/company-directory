@@ -332,6 +332,53 @@ clients that relied on cascade.
 
 Whatever you choose, the `409` needs declaring on `deleteDepartment` in the spec.
 
+## Decided 2026-08-16 — restrict, enforced in both places
+
+`DELETE /departments/{id}` returns `409` while any employee still references the department.
+
+**Nullify was eliminated by §2.5**, not chosen against — it requires a nullable column, and there
+is not one.
+
+**Cascade was rejected.** Deleting a department would delete the people in it, which is
+indefensible for a directory, and it is the irreversible direction: restrict → cascade is a
+behavioural change clients absorb, cascade → restrict breaks every client that relied on it.
+
+### Enforced twice, deliberately
+
+| Layer | Job |
+| --- | --- |
+| Pre-check in the handler | Count the employees and return a `409` that says how many |
+| Foreign key on the column | Refuse the delete when the pre-check loses a race |
+
+Neither alone is enough. The pre-check alone races — an employee can be inserted between the count
+and the delete. The foreign key alone gives the client nothing to act on: it surfaces as a generic
+constraint failure, and since `isConstraintFailure` currently means "duplicate name", a department
+delete would answer *"A department with the name … already exists"*. Confidently wrong, which this
+project treats as worse than silence.
+
+This is the same shape `createDepartment` already uses for duplicate names, so it is the
+established pattern here rather than a new one.
+
+Verified rather than assumed: FluentKit's `references(_:space:_:onDelete:onUpdate:)` defaults
+`onDelete` to `.noAction`, and PostgreSQL refuses the delete on `NO ACTION` just as it does on
+`RESTRICT` — they differ only in when the check fires. So the database would protect the data even
+if the handler forgot. **Declare `.restrict` explicitly anyway**, because the intent should be
+readable in the migration rather than inferred from a default.
+
+### This makes #21 part of #18, not a follow-up
+
+The moment the foreign key exists, `isConstraintFailure` stops meaning "duplicate name". Four
+`catch` blocks — in `createDepartment`, `updateDepartment`, `createEmployee` and `updateEmployee` —
+become able to fire for a foreign-key violation and report a duplicate name that does not exist.
+
+Shipping the relationship without narrowing that mapping means four handlers that can lie. #21 is
+therefore folded into #18 rather than left downstream of it.
+
+### Spec change
+
+`409` needs declaring on `deleteDepartment`, with the `ConflictError` schema the other conflict
+responses already use.
+
 ## 2.5 Decision — is a department required?
 
 `@Parent` requires a value; `@OptionalParent` allows null. Requiring one means a new employee
@@ -340,6 +387,38 @@ departments. Making it optional means every read path has to handle the null cas
 
 For a company directory, required is the simpler model and the more accurate one. Note it forces an
 ordering constraint on clients: create the department first.
+
+## Decided 2026-08-16 — required, via `@Parent`
+
+Every employee belongs to a department. The column is `NOT NULL` and the model uses `@Parent`.
+
+**The deciding argument is one §1.3 deferred.** That section accepted, knowingly, that a generated
+optional cannot distinguish "leave this field alone" from "clear it", and recorded that the bill
+would come due in Phase 2 — because un-assigning an employee would mean setting `departmentId` to
+null. **Requiring the column means the bill never arrives.** There is nothing to clear, so the
+tri-state problem stays theoretical. Choosing optional would have meant solving it: either a
+tri-state wrapper the generator will not produce, or adopting JSON Merge Patch, both of which §1.3
+rejected for good reasons that have not changed.
+
+**"Unassigned" is better modelled as a department than as null.** A real row named *Unassigned* is
+queryable, appears in `GET /departments`, has an id a client can `PATCH` someone into, and needs no
+special case anywhere. Null is a state every consumer must remember to handle, forever, and that no
+listing ever shows.
+
+Reads also stay simple: `SchemaConversions.swift` keeps producing non-optional values, and
+`departmentId` is a plain required field on the `Employee` schema.
+
+### The two costs this accepts
+
+**Clients must create the department before the employee.** A real ordering constraint, though a
+directory naturally acquires departments before people.
+
+**The migration is the actual work in this decision.** `employees` is already populated, so a
+`NOT NULL` foreign key cannot simply be added. It needs three steps in sequence — add the column
+nullable, backfill every existing row to a department, then apply the `NOT NULL` constraint — or a
+default pointing at an existing row. [`MIGRATIONS.md`](MIGRATIONS.md) lists this under *Not yet
+encountered*; #18 is where it stops being theoretical. Append, never amend: this is a new migration,
+not an edit to `CreateEmployees`.
 
 ## 2.6 Optional — the nested collection route
 

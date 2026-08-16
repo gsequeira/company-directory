@@ -137,9 +137,9 @@ those are the ones to respect:
 | #3 | Any new list-asserting test | Current ordering is accidental; write tests against it and the luck gets baked into assertions |
 | ~~#10~~ | #9 | `UpdateEmployeeRequest`'s shape *is* the PATCH decision. **Decided 2026-08-16** — partial update; see [`API-DESIGN.md`](API-DESIGN.md) §1.3. #9 is unblocked, and also carries the matching change to `UpdateDepartmentRequest` |
 | ~~#7, #8~~ | #9 | #9 mirrors the department handlers. Copy them unfixed and it is six sites to correct, not three. **Both merged** 2026-08-15/16 |
-| #19, #20 | #18 | Both change the migration and the model |
+| ~~#19, #20~~ | #18 | Both change the migration and the model. **Decided 2026-08-16** — required `@Parent`, and restrict on delete; see [`API-DESIGN.md`](API-DESIGN.md) §2.4 and §2.5 |
 | #17 | #18 | Phase 2 changes that code's correctness — the test turns it into a visible failure |
-| #18 | #21 | Nothing to narrow until the foreign key exists |
+| #18 | ~~#21~~ | **Folded into #18 on 2026-08-16.** Nothing to narrow until the foreign key exists — but shipping the foreign key *without* narrowing leaves four `catch` blocks able to report a duplicate name that does not exist. Doing it separately means merging a known-wrong error path |
 
 Two of these are cost dependencies rather than hard ones — #7 and #8 before #9, and declaring `400`
 on the new operations while #9's spec is open rather than making #2 retrofit six of them. Nothing
@@ -153,8 +153,8 @@ every line, so it conflicts with any large branch that is open at the time. Run 
 written before it get rewritten. #13 is the exception — department-only, so Phase 2 cannot
 invalidate it.
 
-**Next up is #9**, the last of Phase 1's implementation work. Everything ahead of it — #1, #7, #8
-and #10 — is merged.
+**Phase 1 is complete** as of 2026-08-16: #1, #7, #8, #9, #10, #13, #16 and #34 are merged, and
+both entities have full CRUD. **Next is #18**, the relationship, with #19, #20 and #21 folded in.
 
 ---
 

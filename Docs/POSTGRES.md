@@ -58,7 +58,7 @@ the migration is unambiguously caused by the migration.
 ```bash
 git status --short          # expect: no output
 swift build 2>&1 | tail -5  # expect: no warnings
-swift test 2>&1 | tail -5   # expect: 14/14 passing
+swift test 2>&1 | tail -5   # expect: every test passing
 docker context ls           # expect: one context marked *, and no ERROR column entry
 docker compose version      # expect: v2 or later
 ```

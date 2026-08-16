@@ -17,7 +17,7 @@ each lesson.
 gh issue develop 3 --checkout          # branch, linked to the issue on GitHub
 docker compose up -d --wait            # the suite needs db-test running
 # ... work ...
-swift build && swift test              # 14/14 before you push
+swift build && swift test              # all green before you push
 git push -u origin HEAD
 gh pr create --fill --body "Fixes #3"
 ```
@@ -297,6 +297,34 @@ it open.
 
 ---
 
+# Numbers rot, records do not
+
+A sweep of all twelve documents on 2026-08-16 found the prose sound and every cross-reference
+resolving. The only drift was of one kind, in four places: **a count written into an instruction**.
+
+```bash
+swift test              # 14/14 before you push      ← wrong after every merge that adds a test
+swift test              # all green before you push  ← still true in a year
+```
+
+The distinction that matters is between an **instruction** and a **record**.
+
+| Kind | Example | Numbers? |
+| --- | --- | --- |
+| Instruction — something a reader will run | the checklist below, `POSTGRES.md` Step 0 | **No.** Say what good looks like, not how many |
+| Record — what happened at a moment | "14/14 green on amd64" in [`ISSUE-LOG.md`](ISSUE-LOG.md), the outputs in `POSTGRES.md` | **Yes.** The number *is* the evidence, and history does not go stale |
+
+[`API-COVERAGE.md`](API-COVERAGE.md) shows the third case, and gets it right: a status document
+that will certainly go out of date, stamped with its date and commit and saying so in its own
+opening. That is the honest way to write a number that ages — not to avoid it, but to date it.
+
+The same rule caught a stale code quote in the same sweep: `API-COVERAGE.md` still quoted
+`existingDepartment.id!` after #8 replaced it with `requireID()`. Quoting source in prose is a
+record of the code at a moment, so it drifts the same way. Prefer a file-and-symbol reference over a
+paste when the exact text does not carry the point.
+
+---
+
 # Checklist
 
 Before opening the pull request:
@@ -304,9 +332,10 @@ Before opening the pull request:
 - [ ] Branch named `<issue-number>-<slug>`, created with `gh issue develop` so it is linked.
 - [ ] `docker compose up -d --wait` — the suite needs `db-test`.
 - [ ] `swift build` clean. Warnings count.
-- [ ] `swift test` — 14/14, or more if the issue added tests.
+- [ ] `swift test` — every test passing, and the count higher than before if the issue added any.
 - [ ] New behaviour has a test, and that test has been seen to fail.
 - [ ] Docs updated where the change contradicts them. A stale doc is worse than a missing one.
+- [ ] No test count written into an instruction — see *Numbers rot, records do not* below.
 - [ ] Tooling changes are in their own commit.
 - [ ] PR body says `Fixes #N`, so merging closes the issue.
 

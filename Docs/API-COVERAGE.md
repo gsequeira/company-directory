@@ -168,9 +168,9 @@ a department with an empty name. The spec sets no `minLength`, so this is techni
 but it is unlikely to be intended. Fix in the spec rather than the handler if it is not.
 
 **Self-rename is untested.** `PATCH` on a department using its own current name correctly returns
-`200` rather than `409`. That behaviour depends entirely on the `.filter(\.$id !=
-existingDepartment.id!)` line in `updateDepartment` — delete that line and the whole suite still
-passes. This is the "assertion that cannot fail" problem from Step 5 of [`TESTING.md`](TESTING.md),
+`200` rather than `409`. That behaviour depends entirely on the `.filter(\.$id != (try
+existingDepartment.requireID()))` line in `updateDepartment` — delete that line and the whole suite
+still passes. This is the "assertion that cannot fail" problem from Step 5 of [`TESTING.md`](TESTING.md),
 one level up: a whole branch with no test holding it in place.
 
 **The employee resource is a stub.** The spec declares only `GET` and `POST` on `/employees` —

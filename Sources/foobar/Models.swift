@@ -21,7 +21,7 @@ enum Models {
         @Timestamp(key: "updated_at", on: .update)
         var updatedAt: Date?
 
-        init() { }
+        init() {}
 
         init(name: String) {
             self.name = name
@@ -47,7 +47,7 @@ enum Models {
         @Timestamp(key: "updated_at", on: .update)
         var updatedAt: Date?
 
-        init() { }
+        init() {}
 
         init(firstName: String, lastName: String) {
             self.firstName = firstName

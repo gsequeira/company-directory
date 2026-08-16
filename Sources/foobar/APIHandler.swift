@@ -43,7 +43,8 @@ struct APIHandler: APIProtocol {
     /// - `401` — declared by the spec, unreachable in practice (#11).
     /// - `409` — a department already holds that name. Returned from two places: the pre-check
     ///   below, and the `catch` that handles losing the race to another request.
-    func createDepartment(_ input: Operations.CreateDepartment.Input) async throws -> Operations.CreateDepartment.Output {
+    func createDepartment(_ input: Operations.CreateDepartment.Input) async throws -> Operations.CreateDepartment.Output
+    {
         switch input.body {
         case .json(let createRequest):
             // This check and the insert below are not atomic: two concurrent requests can
@@ -98,7 +99,9 @@ struct APIHandler: APIProtocol {
     /// - `200` — the department.
     /// - `404` — no department has that id. Sent with an empty body, which is what distinguishes
     ///   it from a routing `404`.
-    func getDepartmentDetail(_ input: Operations.GetDepartmentDetail.Input) async throws -> Operations.GetDepartmentDetail.Output {
+    func getDepartmentDetail(_ input: Operations.GetDepartmentDetail.Input) async throws
+        -> Operations.GetDepartmentDetail.Output
+    {
         let departmentId = input.path.departmentId
 
         guard let department = try await Models.Department.find(departmentId, on: database) else {
@@ -119,7 +122,8 @@ struct APIHandler: APIProtocol {
     ///
     /// `name` is optional: a body of `{}` changes nothing and returns the department unchanged.
     /// See `Docs/API-DESIGN.md` §1.3 for why `PATCH` means partial update here.
-    func updateDepartment(_ input: Operations.UpdateDepartment.Input) async throws -> Operations.UpdateDepartment.Output {
+    func updateDepartment(_ input: Operations.UpdateDepartment.Input) async throws -> Operations.UpdateDepartment.Output
+    {
         let departmentId = input.path.departmentId
 
         switch input.body {
@@ -176,7 +180,8 @@ struct APIHandler: APIProtocol {
     ///
     /// What happens to a department's employees is undecided until Phase 2 gives them a
     /// relationship (#19).
-    func deleteDepartment(_ input: Operations.DeleteDepartment.Input) async throws -> Operations.DeleteDepartment.Output {
+    func deleteDepartment(_ input: Operations.DeleteDepartment.Input) async throws -> Operations.DeleteDepartment.Output
+    {
         let departmentId = input.path.departmentId
 
         guard let existingDepartment = try await Models.Department.find(departmentId, on: database) else {
@@ -260,7 +265,9 @@ struct APIHandler: APIProtocol {
     /// - `200` — the employee.
     /// - `404` — no employee has that id. Sent with an empty body, which is what distinguishes
     ///   it from a routing `404`.
-    func getEmployeeDetail(_ input: Operations.GetEmployeeDetail.Input) async throws -> Operations.GetEmployeeDetail.Output {
+    func getEmployeeDetail(_ input: Operations.GetEmployeeDetail.Input) async throws
+        -> Operations.GetEmployeeDetail.Output
+    {
         let employeeId = input.path.employeeId
 
         guard let employee = try await Models.Employee.find(employeeId, on: database) else {

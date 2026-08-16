@@ -136,7 +136,8 @@ struct APIHandlerIntegrationTests {
 
             // Update the department
             let updateRequest = Components.Schemas.UpdateDepartmentRequest(name: "Customer Service")
-            let updatedResponse = try await application.sendRequest(.PATCH, "/api/departments/\(createDepartment.id)",
+            let updatedResponse = try await application.sendRequest(
+                .PATCH, "/api/departments/\(createDepartment.id)",
                 body: updateRequest)
 
             #expect(updatedResponse.status == .ok)
@@ -152,7 +153,8 @@ struct APIHandlerIntegrationTests {
     func testUpdateDepartmentNotFound() async throws {
         try await TestHelpers.withApplication { application in
             let updateRequest = Components.Schemas.UpdateDepartmentRequest(name: "Nowhere")
-            let response = try await application.sendRequest(.PATCH, "/api/departments/999",
+            let response = try await application.sendRequest(
+                .PATCH, "/api/departments/999",
                 body: updateRequest)
 
             #expect(response.status == .notFound)
@@ -168,11 +170,13 @@ struct APIHandlerIntegrationTests {
         try await TestHelpers.withApplication { application in
             let existingName = "Engineering"
 
-            let firstResponse = try await application.sendRequest(.POST, "/api/departments",
+            let firstResponse = try await application.sendRequest(
+                .POST, "/api/departments",
                 body: Components.Schemas.CreateDepartmentRequest(name: existingName))
             try #require(firstResponse.status == .created)
 
-            let secondResponse = try await application.sendRequest(.POST, "/api/departments",
+            let secondResponse = try await application.sendRequest(
+                .POST, "/api/departments",
                 body: Components.Schemas.CreateDepartmentRequest(name: "Customer Support"))
             try #require(secondResponse.status == .created)
             let secondDepartment = try secondResponse.content.decode(Components.Schemas.Department.self)
@@ -196,7 +200,8 @@ struct APIHandlerIntegrationTests {
         try await TestHelpers.withApplication { application in
             let name = "Research and Development"
 
-            let createResponse = try await application.sendRequest(.POST, "/api/departments",
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/departments",
                 body: Components.Schemas.CreateDepartmentRequest(name: name))
             try #require(createResponse.status == .created)
             let createdDepartment = try createResponse.content.decode(Components.Schemas.Department.self)
@@ -353,7 +358,8 @@ struct APIHandlerIntegrationTests {
     @Test("GET /api/employees/{employeeId} returns specific employee when it exists")
     func testGetEmployeeDetailSuccess() async throws {
         try await TestHelpers.withApplication { application in
-            let createResponse = try await application.sendRequest(.POST, "/api/employees",
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/employees",
                 body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
             try #require(createResponse.status == .created)
             let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
@@ -385,7 +391,8 @@ struct APIHandlerIntegrationTests {
     @Test("PATCH /api/employees/{employeeId} updates one field and leaves the other unchanged")
     func testUpdateEmployeePartial() async throws {
         try await TestHelpers.withApplication { application in
-            let createResponse = try await application.sendRequest(.POST, "/api/employees",
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/employees",
                 body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
             try #require(createResponse.status == .created)
             let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
@@ -393,7 +400,8 @@ struct APIHandlerIntegrationTests {
             // The whole point of the PATCH decision in API-DESIGN.md §1.3: a client correcting a
             // first name should not have to know the last name.
             let updateRequest = Components.Schemas.UpdateEmployeeRequest(firstName: "Augusta")
-            let response = try await application.sendRequest(.PATCH, "/api/employees/\(createdEmployee.id)",
+            let response = try await application.sendRequest(
+                .PATCH, "/api/employees/\(createdEmployee.id)",
                 body: updateRequest)
 
             #expect(response.status == .ok)
@@ -409,7 +417,8 @@ struct APIHandlerIntegrationTests {
     @Test("PATCH /api/employees/{employeeId} with an empty body changes nothing")
     func testUpdateEmployeeEmptyBody() async throws {
         try await TestHelpers.withApplication { application in
-            let createResponse = try await application.sendRequest(.POST, "/api/employees",
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/employees",
                 body: Components.Schemas.CreateEmployeeRequest(firstName: "Grace", lastName: "Hopper"))
             try #require(createResponse.status == .created)
             let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
@@ -417,7 +426,8 @@ struct APIHandlerIntegrationTests {
             // Sent as raw bytes rather than an encoded struct, because `{}` on the wire is what a
             // client actually produces when its patch turns out to be empty. It must not conflict
             // with the employee's own row — see the `$id !=` filter in updateEmployee.
-            let response = try await application.sendRequest(.PATCH, "/api/employees/\(createdEmployee.id)",
+            let response = try await application.sendRequest(
+                .PATCH, "/api/employees/\(createdEmployee.id)",
                 body: Data("{}".utf8))
 
             #expect(response.status == .ok)
@@ -431,18 +441,21 @@ struct APIHandlerIntegrationTests {
     @Test("PATCH /api/employees/{employeeId} returns conflict when the resulting name is taken")
     func testUpdateEmployeeDuplicateName() async throws {
         try await TestHelpers.withApplication { application in
-            let firstResponse = try await application.sendRequest(.POST, "/api/employees",
+            let firstResponse = try await application.sendRequest(
+                .POST, "/api/employees",
                 body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
             try #require(firstResponse.status == .created)
 
-            let secondResponse = try await application.sendRequest(.POST, "/api/employees",
+            let secondResponse = try await application.sendRequest(
+                .POST, "/api/employees",
                 body: Components.Schemas.CreateEmployeeRequest(firstName: "Grace", lastName: "Lovelace"))
             try #require(secondResponse.status == .created)
             let secondEmployee = try secondResponse.content.decode(Components.Schemas.Employee.self)
 
             // Only `firstName` is sent. The check has to combine it with the *stored* last name
             // to see the collision — checking the supplied fields alone would miss it.
-            let response = try await application.sendRequest(.PATCH, "/api/employees/\(secondEmployee.id)",
+            let response = try await application.sendRequest(
+                .PATCH, "/api/employees/\(secondEmployee.id)",
                 body: Components.Schemas.UpdateEmployeeRequest(firstName: "Ada"))
 
             #expect(response.status == .conflict)
@@ -457,7 +470,8 @@ struct APIHandlerIntegrationTests {
     @Test("PATCH /api/employees/{employeeId} returns not found for non-existent employee")
     func testUpdateEmployeeNotFound() async throws {
         try await TestHelpers.withApplication { application in
-            let response = try await application.sendRequest(.PATCH, "/api/employees/999",
+            let response = try await application.sendRequest(
+                .PATCH, "/api/employees/999",
                 body: Components.Schemas.UpdateEmployeeRequest(firstName: "Nobody"))
 
             #expect(response.status == .notFound)
@@ -468,7 +482,8 @@ struct APIHandlerIntegrationTests {
     @Test("DELETE /api/employees/{employeeId} deletes existing employee successfully")
     func testDeleteEmployeeSuccess() async throws {
         try await TestHelpers.withApplication { application in
-            let createResponse = try await application.sendRequest(.POST, "/api/employees",
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/employees",
                 body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
             try #require(createResponse.status == .created)
             let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
@@ -495,14 +510,16 @@ struct APIHandlerIntegrationTests {
     @Test("PATCH /api/departments/{departmentId} with an empty body changes nothing")
     func testUpdateDepartmentEmptyBody() async throws {
         try await TestHelpers.withApplication { application in
-            let createResponse = try await application.sendRequest(.POST, "/api/departments",
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/departments",
                 body: Components.Schemas.CreateDepartmentRequest(name: "Engineering"))
             try #require(createResponse.status == .created)
             let createdDepartment = try createResponse.content.decode(Components.Schemas.Department.self)
 
             // The department half of the same decision: `name` is now optional, and omitting it
             // must leave the column alone rather than blanking it.
-            let response = try await application.sendRequest(.PATCH, "/api/departments/\(createdDepartment.id)",
+            let response = try await application.sendRequest(
+                .PATCH, "/api/departments/\(createdDepartment.id)",
                 body: Data("{}".utf8))
 
             #expect(response.status == .ok)

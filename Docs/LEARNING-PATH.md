@@ -137,6 +137,39 @@ integrates RediStack when the time comes; the plumbing was never the difficult p
 
 ---
 
+### 7. Versioning a contract other people depend on
+
+Every spec change so far has been free, because the only client is the test suite. That ends the
+moment something you do not control is calling the API.
+
+The `PATCH` decision in [`API-DESIGN.md`](API-DESIGN.md) §1.3 is a preview: dropping `required` from
+a request schema is harmless here and would be a breaking change with real clients — as would
+tightening a type, removing a field from a response, or adding a required field to a request. The
+question is not "how do I add `/v2`", it is which changes need a new version at all.
+
+**What to learn:** which changes are backward-compatible and which are not, and the strategies —
+URL versioning, media-type versioning, or the additive-only discipline that avoids needing either.
+Adding an optional field is safe; almost nothing else is.
+
+**Why it does not surface here:** nothing depends on this contract, so every breaking change costs
+nothing and teaches nothing.
+
+### 8. Deletion that is not deletion
+
+`DELETE /departments/{id}` removes the row. An order cannot work that way — it is a financial
+record, and "the customer deleted it" is not a thing that may happen to it.
+
+Real systems soft-delete, and the consequences reach everywhere: every query needs a `WHERE
+deleted_at IS NULL`, unique constraints have to account for deleted rows, and "who changed this,
+when, and to what" becomes a question the schema must be able to answer.
+
+**What to learn:** Fluent's `@Timestamp(on: .delete)` and what it does to queries, plus the
+difference between a soft delete and an append-only audit trail — they solve different problems and
+are often both needed.
+
+**Why it does not surface here:** a department genuinely can be deleted, and #19 decided the only
+interesting question — that it is refused while employees still reference it.
+
 ## Two changes worth making now
 
 ### Move to PostgreSQL earlier than feels necessary — **done 2026-08-14**
@@ -392,6 +425,41 @@ bring their own requirements — signature verification and, again, idempotency,
 retry.
 
 ---
+
+## What transfers, assessed 2026-08-16 with Phase 1 complete
+
+The list above is about missing *exposure*. This section is about what is not missing, because it is
+the more useful half when deciding whether to start the real thing.
+
+**The practices transfer, and they are the actual asset** — more than any code here will be.
+
+| Practice | Evidence it is real rather than aspirational |
+| --- | --- |
+| Spec-first, with the compiler enumerating the work | #9 changed `openapi.yaml` first and let the build break; three errors named the work exactly |
+| Constraints as the source of truth, not handler checks | Restoring `id!` killed the test *process*; deleting a `.filter` failed exactly one test. Both proved rather than argued |
+| Append-never-amend migrations | A migration failed against real data, and the recovery is written down in [`MIGRATIONS.md`](MIGRATIONS.md) |
+| Decisions recorded with what was rejected | §1.2, §1.3, §2.4 and §2.5 all name the option not taken and why |
+| Verify instead of assert | swift-format's rule set, FluentKit's `onDelete` default, `withKnownIssue`'s tripwire behaviour — each checked against the source, and several corrected a confident wrong answer |
+
+**The domain does not transfer, and one gap is structural rather than a topic.**
+
+Every failure in this project is *your own*: a constraint, a decoding error, a missing row. The
+process is a closed world, and its error model reflects that.
+
+A shopping backend calls a payment provider that can time out **after succeeding**. That single fact
+reshapes everything above: the retry is no longer safe, so idempotency (item 2) stops being good
+practice and becomes load-bearing; the failure is no longer yours to classify; and other systems
+call *you*, so a webhook must be safe to receive twice. Nothing here rehearses any of it, because
+nothing here talks to anyone.
+
+That is the one thing worth being deliberate about rather than discovering: not "we should add
+retries", but that an operation crossing a system boundary needs a different shape from one that
+does not.
+
+**What to add to this project before starting the shopping domain: nothing structural.** Finish
+Phase 2, land #45 so an N+1 is something you can look at, and treat Phases 3 and 4 as the bridge —
+they are already aimed at the two hardest items on the list. Then start fresh, and let money and
+idempotency be learned where they actually bite.
 
 ## Suggested order
 

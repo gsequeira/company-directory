@@ -333,6 +333,63 @@ Both directions confirmed — the second one matters as much as the first, per
 [`TESTING.md`](TESTING.md) step 5. And check the rollback delta, not just the status code: it is
 what proves the insert reached the database rather than the pre-check answering early.
 
+# Worked example: the foreign key, step 1 of 3
+
+Giving every employee a department (#18, #20) is the first time this project has had to add a
+required column to a table that already holds rows. The sequence in *Not yet encountered* below —
+add nullable, backfill, then constrain — is now being followed rather than merely described, and it
+is split across three pull requests so each step can be proved before the next depends on it.
+
+**Step 1 adds the column nullable, with the foreign key already live.** That combination is what
+makes the step safe on its own: existing rows keep working because the column accepts null, and
+existing code keeps working because it never mentions the column — while referential integrity is
+enforced from the moment the migration runs.
+
+```swift
+.field("department_id", .int32, .references(Models.Department.schema, "id", onDelete: .restrict))
+```
+
+## Proving it rather than trusting the schema
+
+`\d employees` shows the constraint exists. That is not the same as it being enforced — on the
+SQLite stack this project started with, it would have been recorded and silently ignored unless
+`PRAGMA foreign_keys = ON` was set per connection. So provoke it:
+
+```sql
+UPDATE employees SET department_id = 999 WHERE id = 1;
+```
+```
+ERROR:  insert or update on table "employees" violates foreign key constraint
+        "employees_department_id_fkey"
+DETAIL:  Key (department_id)=(999) is not present in table "departments".
+```
+
+And the delete rule decided in [`API-DESIGN.md`](API-DESIGN.md) §2.4, with an employee pointed at a
+real department:
+
+```sql
+DELETE FROM departments WHERE id = 1;
+```
+```
+ERROR:  update or delete on table "departments" violates RESTRICT setting of foreign key
+        constraint "employees_department_id_fkey" on table "employees"
+DETAIL:  Key (id)=(1) is referenced from table "employees".
+```
+
+**The restrict behaviour is enforced by the database before any handler code exists.** The `409`
+that `deleteDepartment` will return is a nicer message for the same refusal, not the thing doing the
+refusing — which is the right way round, because a handler check alone would race.
+
+## Why bother with three steps here
+
+The development database holds a handful of throwaway rows, so nothing here would be lost by
+dropping the table and starting again. The sequence is followed anyway, because the technique is
+the thing worth having: a table you cannot truncate is the normal case everywhere except a learning
+project, and the shape of the fix — add nullable, backfill, constrain — is the same whether the
+table holds one row or a million.
+
+What genuinely differs at scale is locking, which is covered in *Not yet encountered* below.
+
 # Not yet encountered
 
 Things this project has not had to deal with, listed so they are not a surprise later:

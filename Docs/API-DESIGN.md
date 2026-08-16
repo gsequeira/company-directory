@@ -147,7 +147,15 @@ reason it stops being exact once Phase 2 adds a foreign key, is in [`FLUENT.md`]
 `PUT` semantics under a `PATCH` verb. With one field the difference is invisible; with two it
 becomes real, because a client cannot update one field without already knowing the other.
 
-Since `Employee` has two fields, this decision lands immediately:
+Since `Employee` has two fields, this decision lands immediately — and Phase 2 adds a third.
+
+The two coherent answers were **partial update** (drop `required`, keep `PATCH`) and **full
+replacement** (keep `required`, rename the verb to `PUT`). What is not coherent, and what the code
+did, is `PATCH` with required fields.
+
+## Decided 2026-08-16 — partial update, applied to both resources
+
+`PATCH` stays, `required` goes. Omitted fields are left unchanged.
 
 ```yaml
     UpdateEmployeeRequest:
@@ -168,9 +176,63 @@ if let firstName = updateRequest.firstName { employee.firstName = firstName }
 if let lastName = updateRequest.lastName { employee.lastName = lastName }
 ```
 
-The alternative is honest too: keep everything required and change the verb to `PUT`. What is not
-coherent is `PATCH` with required fields. Whichever you choose, apply it to
-`UpdateDepartmentRequest` as well so the two resources behave the same way.
+**This applies to `UpdateDepartmentRequest` too**, in the same pull request, so the two resources
+never disagree about what `PATCH` means. That work rides along with #9 rather than getting its own
+issue, since #9 already edits both the spec and `APIHandler`.
+
+### Why `PUT` was rejected
+
+Not on aesthetics — on how the two options age.
+
+`PUT` means *replace the resource with this representation*, and a department's representation
+includes the server-assigned `id`. So a strict `PUT` body ought to carry `id`, which buys a new rule
+to police (what happens when the body's `id` disagrees with the path's) and a test for it. The
+alternative is a `PUT` whose body is not the resource — the same species of incoherence this
+decision exists to remove.
+
+It also ages badly into Phase 2. Once `Employee` carries `departmentId`, every rename must resend
+the department assignment, so a client holding a stale copy silently reassigns the employee while
+trying to fix a typo. That is the classic lost-update hazard: `PUT` invites it, `PATCH`
+structurally cannot express it.
+
+`PUT` remains the better verb for genuinely idempotent whole-document resources — a config
+blob, an object store, anything where the client legitimately owns the entire representation. That
+is not what these endpoints are.
+
+### What this costs, since it is not free
+
+**An empty body is now a valid request.** `PATCH` with `{}` means "change nothing" and returns
+`200` with the unchanged resource. Rejecting it was tempting, but a client that builds a patch by
+diffing will legitimately produce an empty patch when nothing changed, and a `400` there forces
+every caller to special-case emptiness.
+
+One side effect worth naming so it is not mistaken for a fix: `PATCH /api/departments/{id}` with
+`{}` currently returns `500`, one row in the malformed-input table in
+[`API-COVERAGE.md`](API-COVERAGE.md). This decision deletes that row by making the input valid. The
+underlying defect — malformed input returning `500` rather than `400` — is untouched.
+
+**Absent and `null` collapse into the same value.** A generated `String?` cannot distinguish "leave
+this alone" from "set this to nothing". That costs nothing today, because no field is nullable. It
+lands in **Phase 2**, where un-assigning an employee from a department is precisely "set
+`departmentId` to null". How swift-openapi-generator represents `nullable: true` on an optional
+property is unverified — test it when Phase 2 arrives rather than assuming.
+
+**One `if let` per field, permanently.** Fine at two fields. Revisit the shape if a request schema
+ever reaches roughly eight.
+
+### The alternatives that solve the null problem properly
+
+[RFC 7396 JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7396) (`application/merge-patch+json`)
+gives `null` an explicit meaning — *delete this field* — while absent still means *leave it*.
+[RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902) goes further, sending an operation
+list (`[{"op": "replace", "path": "/name", "value": "…"}]`), which also buys array edits and
+test-then-apply preconditions.
+
+**Neither is right here, and the reason is the reason this project exists.** Both fight typed code
+generation: Merge Patch needs a tri-state wrapper the generator will not produce, and JSON Patch
+abandons a typed body altogether for an opaque operation array — discarding the schema that makes
+spec-first worth doing. Reach for Merge Patch when a resource grows a nullable field clients
+genuinely need to clear, and not before.
 
 ---
 

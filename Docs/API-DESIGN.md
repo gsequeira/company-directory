@@ -22,14 +22,13 @@ contain.
 | --- | --- | --- |
 | List | `GET /departments` | `GET /employees` |
 | Create | `POST /departments` | `POST /employees` |
-| Read one | `GET /departments/{departmentId}` | — |
-| Update | `PATCH /departments/{departmentId}` | — |
-| Delete | `DELETE /departments/{departmentId}` | — |
+| Read one | `GET /departments/{departmentId}` | `GET /employees/{employeeId}` |
+| Update | `PATCH /departments/{departmentId}` | `PATCH /employees/{employeeId}` |
+| Delete | `DELETE /departments/{departmentId}` | `DELETE /employees/{employeeId}` |
 
-`Department` has full CRUD and serves as the reference implementation. `Employee` has list and
-create only — the `/employees/{employeeId}` path does not exist in the spec at all. The two
-entities are currently unrelated: `Models.Employee` has no `@Parent`, the `employees` table has no
-`department_id`, and the `Employee` schema has no `departmentId`.
+**Both entities have full CRUD as of 2026-08-16 (#9).** `PATCH` is a partial update on both — see
+§1.3. The two entities remain unrelated: `Models.Employee` has no `@Parent`, the `employees` table
+has no `department_id`, and the `Employee` schema has no `departmentId`. That is Phase 2.
 
 ---
 

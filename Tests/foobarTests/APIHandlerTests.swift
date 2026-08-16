@@ -349,4 +349,167 @@ struct APIHandlerIntegrationTests {
             #expect(Set(employeeList.employees.map(\.fullName)) == ["Ada Lovelace", "Grace Hopper"])
         }
     }
+
+    @Test("GET /api/employees/{employeeId} returns specific employee when it exists")
+    func testGetEmployeeDetailSuccess() async throws {
+        try await TestHelpers.withApplication { application in
+            let createResponse = try await application.sendRequest(.POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
+            try #require(createResponse.status == .created)
+            let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
+
+            let response = try await application.sendRequest(.GET, "/api/employees/\(createdEmployee.id)")
+
+            #expect(response.status == .ok)
+            #expect(response.headers.contentType == .json)
+
+            let fetchedEmployee = try response.content.decode(Components.Schemas.Employee.self)
+            #expect(fetchedEmployee.id == createdEmployee.id)
+            #expect(fetchedEmployee.firstName == "Ada")
+            #expect(fetchedEmployee.lastName == "Lovelace")
+        }
+    }
+
+    @Test("GET /api/employees/{employeeId} returns not found for non-existent employee")
+    func testGetEmployeeDetailNotFound() async throws {
+        try await TestHelpers.withApplication { application in
+            let response = try await application.sendRequest(.GET, "/api/employees/999")
+            #expect(response.status == .notFound)
+
+            // An empty body proves the request reached getEmployeeDetail rather than falling
+            // through the router, which would carry Vapor's {"error":true,"reason":"Not Found"}.
+            #expect(response.body.readableBytes == 0)
+        }
+    }
+
+    @Test("PATCH /api/employees/{employeeId} updates one field and leaves the other unchanged")
+    func testUpdateEmployeePartial() async throws {
+        try await TestHelpers.withApplication { application in
+            let createResponse = try await application.sendRequest(.POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
+            try #require(createResponse.status == .created)
+            let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
+
+            // The whole point of the PATCH decision in API-DESIGN.md §1.3: a client correcting a
+            // first name should not have to know the last name.
+            let updateRequest = Components.Schemas.UpdateEmployeeRequest(firstName: "Augusta")
+            let response = try await application.sendRequest(.PATCH, "/api/employees/\(createdEmployee.id)",
+                body: updateRequest)
+
+            #expect(response.status == .ok)
+            #expect(response.headers.contentType == .json)
+
+            let updatedEmployee = try response.content.decode(Components.Schemas.Employee.self)
+            #expect(updatedEmployee.id == createdEmployee.id)
+            #expect(updatedEmployee.firstName == "Augusta")
+            #expect(updatedEmployee.lastName == "Lovelace")
+        }
+    }
+
+    @Test("PATCH /api/employees/{employeeId} with an empty body changes nothing")
+    func testUpdateEmployeeEmptyBody() async throws {
+        try await TestHelpers.withApplication { application in
+            let createResponse = try await application.sendRequest(.POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(firstName: "Grace", lastName: "Hopper"))
+            try #require(createResponse.status == .created)
+            let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
+
+            // Sent as raw bytes rather than an encoded struct, because `{}` on the wire is what a
+            // client actually produces when its patch turns out to be empty. It must not conflict
+            // with the employee's own row — see the `$id !=` filter in updateEmployee.
+            let response = try await application.sendRequest(.PATCH, "/api/employees/\(createdEmployee.id)",
+                body: Data("{}".utf8))
+
+            #expect(response.status == .ok)
+
+            let updatedEmployee = try response.content.decode(Components.Schemas.Employee.self)
+            #expect(updatedEmployee.firstName == "Grace")
+            #expect(updatedEmployee.lastName == "Hopper")
+        }
+    }
+
+    @Test("PATCH /api/employees/{employeeId} returns conflict when the resulting name is taken")
+    func testUpdateEmployeeDuplicateName() async throws {
+        try await TestHelpers.withApplication { application in
+            let firstResponse = try await application.sendRequest(.POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
+            try #require(firstResponse.status == .created)
+
+            let secondResponse = try await application.sendRequest(.POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(firstName: "Grace", lastName: "Lovelace"))
+            try #require(secondResponse.status == .created)
+            let secondEmployee = try secondResponse.content.decode(Components.Schemas.Employee.self)
+
+            // Only `firstName` is sent. The check has to combine it with the *stored* last name
+            // to see the collision — checking the supplied fields alone would miss it.
+            let response = try await application.sendRequest(.PATCH, "/api/employees/\(secondEmployee.id)",
+                body: Components.Schemas.UpdateEmployeeRequest(firstName: "Ada"))
+
+            #expect(response.status == .conflict)
+            #expect(response.headers.contentType == .json)
+
+            let conflictError = try response.content.decode(Components.Schemas.ConflictError.self)
+            #expect(conflictError.error == true)
+            #expect(conflictError.reason.contains("Ada Lovelace"))
+        }
+    }
+
+    @Test("PATCH /api/employees/{employeeId} returns not found for non-existent employee")
+    func testUpdateEmployeeNotFound() async throws {
+        try await TestHelpers.withApplication { application in
+            let response = try await application.sendRequest(.PATCH, "/api/employees/999",
+                body: Components.Schemas.UpdateEmployeeRequest(firstName: "Nobody"))
+
+            #expect(response.status == .notFound)
+            #expect(response.body.readableBytes == 0)
+        }
+    }
+
+    @Test("DELETE /api/employees/{employeeId} deletes existing employee successfully")
+    func testDeleteEmployeeSuccess() async throws {
+        try await TestHelpers.withApplication { application in
+            let createResponse = try await application.sendRequest(.POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
+            try #require(createResponse.status == .created)
+            let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
+
+            let deleteResponse = try await application.sendRequest(.DELETE, "/api/employees/\(createdEmployee.id)")
+            #expect(deleteResponse.status == .noContent)
+
+            // Verified by reading state back through the API rather than trusting the status.
+            let fetchResponse = try await application.sendRequest(.GET, "/api/employees/\(createdEmployee.id)")
+            #expect(fetchResponse.status == .notFound)
+        }
+    }
+
+    @Test("DELETE /api/employees/{employeeId} returns not found for non-existent employee")
+    func testDeleteEmployeeNotFound() async throws {
+        try await TestHelpers.withApplication { application in
+            let response = try await application.sendRequest(.DELETE, "/api/employees/999")
+
+            #expect(response.status == .notFound)
+            #expect(response.body.readableBytes == 0)
+        }
+    }
+
+    @Test("PATCH /api/departments/{departmentId} with an empty body changes nothing")
+    func testUpdateDepartmentEmptyBody() async throws {
+        try await TestHelpers.withApplication { application in
+            let createResponse = try await application.sendRequest(.POST, "/api/departments",
+                body: Components.Schemas.CreateDepartmentRequest(name: "Engineering"))
+            try #require(createResponse.status == .created)
+            let createdDepartment = try createResponse.content.decode(Components.Schemas.Department.self)
+
+            // The department half of the same decision: `name` is now optional, and omitting it
+            // must leave the column alone rather than blanking it.
+            let response = try await application.sendRequest(.PATCH, "/api/departments/\(createdDepartment.id)",
+                body: Data("{}".utf8))
+
+            #expect(response.status == .ok)
+
+            let updatedDepartment = try response.content.decode(Components.Schemas.Department.self)
+            #expect(updatedDepartment.id == createdDepartment.id)
+            #expect(updatedDepartment.name == "Engineering")
+        }
+    }
 }

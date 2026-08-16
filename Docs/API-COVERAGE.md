@@ -3,18 +3,14 @@
 A snapshot of how much of `Sources/foobar/openapi.yaml` the suite in
 `Tests/foobarTests/APIHandlerTests.swift` actually exercises, and what it misses.
 
-**Assessed:** 2026-08-14, at commit `15405a2` (14 tests passing). **Partially re-assessed
-2026-08-16** — only the `updateDepartment` rows, when #13 and #16 closed its declared-response gap
-(21 tests passing). Everything else below still dates from the original sweep; a full re-assessment
-is deliberately held until Phase 1 is complete, since #9 changes the employee surface. The
-declared-response tables below
-were re-checked after the move to PostgreSQL and the employee uniqueness migration; both left the
-counts unchanged, but each added a gap — see *Constraint violations surface as 500* and the note on
-`createEmployee`'s 409 below.
+**Assessed:** 2026-08-16, at commit `4c9f714`, with Phase 1 complete and 30 tests passing. This
+supersedes the original sweep of 2026-08-14, which was taken at 14 tests and before #9 added three
+operations. The declared-response tables below have been re-derived from the spec rather than
+edited.
 
 For exercising the API by hand rather than through the suite, see
-[`API-PLAYBOOK.md`](API-PLAYBOOK.md) — every operation with real captured output, including the
-four places the server currently answers wrongly.
+[`API-PLAYBOOK.md`](API-PLAYBOOK.md), which records real captured output for every operation and
+the three places the response does not match the contract.
 
 This is a status document and goes out of date as tests are added — unlike
 [`TESTING.md`](TESTING.md), which holds the conventions for writing them, and
@@ -22,19 +18,18 @@ This is a status document and goes out of date as tests are added — unlike
 trusting them.
 
 **Scope:** this audits how well the *existing* surface is tested. It does not assess whether that
-surface is the right one — the employee resource is deliberately incomplete and the two entities
-are not yet related. See [`API-DESIGN.md`](API-DESIGN.md) for the intended shape and the planned
-sequencing, which puts most of the work below *after* the design phases.
+surface is the right one. The two entities are not yet related; that is Phase 2. See
+[`API-DESIGN.md`](API-DESIGN.md) for the intended shape and the planned sequencing, which puts most
+of the work below *after* the design phases.
 
 ## Summary
 
 Every operation in the spec has at least one test, so there are no completely unexercised
 endpoints. Beneath that:
 
-- **20 of 22 declared responses are tested**, after #9 added three operations and #13/#16 closed
-  `updateDepartment`.
-- **Both remaining gaps cannot be tested** — the two `401`s are spec defects, not missing tests.
-  Every response the server can actually produce now has a test.
+- **20 of 20 declared responses are tested.** #11 deleted the two `401` declarations, which were the
+  only untestable ones. The spec now describes exactly the server that exists, and every response it
+  declares has a test behind it.
 - **Malformed input returns `500` on every endpoint**, an undeclared status that violates the
   contract everywhere. No test sends invalid input, which is why this went unnoticed.
 
@@ -47,7 +42,6 @@ endpoints. Beneath that:
 
 | Item | Kind | Where |
 | --- | --- | --- |
-| The two `401` declarations describe authentication that does not exist, and are asymmetric | Spec defect | [below](#the-two-401s-are-spec-defects-not-test-gaps--needs-addressing) |
 | Malformed input returns `500` instead of `400` on every endpoint | Implementation defect | [below](#undeclared-behaviour-malformed-input-returns-500) |
 | Invalid-input and `Int32` overflow tests. `updateDepartment` 404/409 and self-rename are **done** (#13, #16) | Missing tests | [below](#recommended-additions-in-priority-order) |
 
@@ -56,12 +50,12 @@ endpoints. Beneath that:
 | Operation | Declared | Tested | Missing |
 | --- | --- | --- | --- |
 | `listDepartments` | 200 | 200 | — |
-| `createDepartment` | 201, 401, 409 | 201, 409 | **401** |
+| `createDepartment` | 201, 409 | 201, 409 | — |
 | `getDepartmentDetail` | 200, 404 | 200, 404 | — |
 | `updateDepartment` | 200, 404, 409 | 200, 404, 409 | — |
 | `deleteDepartment` | 204, 404 | 204, 404 | — |
 | `listEmployees` | 200 | 200 | — |
-| `createEmployee` | 201, 401, 409 | 201, 409 | **401** |
+| `createEmployee` | 201, 409 | 201, 409 | — |
 | `getEmployeeDetail` | 200, 404 | 200, 404 | — |
 | `updateEmployee` | 200, 404, 409 | 200, 404, 409 | — |
 | `deleteEmployee` | 204, 404 | 204, 404 | — |
@@ -85,45 +79,22 @@ the `catch` returns the same `409`. The two paths are indistinguishable from out
 individually pinned. That is #17's territory — see *Findings that outlived their issue* in
 [`ISSUE-LOG.md`](ISSUE-LOG.md).
 
-### The two `401`s are spec defects, not test gaps — NEEDS ADDRESSING
+### The two `401`s — resolved 2026-08-16 (#11)
 
-There is no authentication anywhere in the codebase. The spec documents a response the
-implementation cannot produce, so no test can be written for it.
+Both declarations are gone. They described a response no code path could produce, and they were
+asymmetric: `401` was declared on `createDepartment` and `createEmployee` and on nothing else, so
+the spec stated that creating a department required authentication while updating or deleting one
+did not.
 
-The problem is not only that it is unimplemented. `401` is declared on `createDepartment` and
-`createEmployee` and **on nothing else** — so as written, the spec says creating a department
-requires authentication while updating and deleting one does not. Implementing exactly what is
-documented would leave `PATCH` and `DELETE` open. The asymmetry suggests these blocks were
-copied rather than chosen.
+Deleting them was chosen over implementing authentication to match, because a spec advertising
+authentication that does not exist is more dangerous than one advertising none — a client team may
+assume the server rejects unauthenticated calls and omit their own checks.
 
-**Relevant constraint:** `swift-openapi-generator` does not support `security`, `securitySchemes`,
-or Security Requirement objects — all are unchecked in its `Supported-OpenAPI-features.md`.
-Declaring security in the spec therefore generates and enforces nothing; it is documentation for
-humans and other tooling only. Enforcement has to be hand-written Vapor middleware regardless.
-
-**Option A — delete the declarations.** Remove the two `"401"` blocks. Two lines each, no code or
-test changes, and the spec then honestly describes an unauthenticated API. Recommended as the
-immediate step: a spec advertising authentication that does not exist is more dangerous than one
-advertising none, because a client team may assume the server rejects unauthenticated calls and
-skip their own checks.
-
-**Option B — implement authentication.** Three pieces of work, of which the spec change is the
-smallest:
-
-1. Declare `components.securitySchemes` plus a top-level `security` key, and add `401` to **all
-   seven** operations — ideally via a shared `components.responses.Unauthorized` rather than
-   repeating the block.
-2. Write an `AsyncMiddleware` that checks the credential and throws `Abort(.unauthorized)`.
-   Compare tokens in constant time; `==` short-circuits and leaks length and prefix through timing.
-3. Register it as `application.grouped(...)` and pass that group to `VaporTransport` as the routes
-   builder, so the API is protected but `/health` — registered directly on the application — stays
-   reachable for load balancer probes. Source the credential from the environment and fail startup
-   if it is missing; a default token is worse than no authentication because it looks protected.
-
-Two consequences to plan for: middleware rejects before the generated handler runs, so the `401`
-body will be Vapor's `{"error":true,"reason":"Unauthorized"}` rather than anything the spec
-describes; and `TestHelpers.withApplication` will need to supply a credential or all existing tests
-begin failing with `401`.
+Authentication remains wanted. The design is recorded on #24, and the mechanism in
+[`MIDDLEWARE.md`](MIDDLEWARE.md) → *Planned — authentication*, including the constraint that
+`swift-openapi-generator` supports neither `security` nor `securitySchemes`, so enforcement is
+hand-written middleware regardless of what the spec declares. That reasoning is deliberately not
+repeated here; this document records what is tested.
 
 ## Undeclared behaviour: malformed input returns 500
 
@@ -160,8 +131,8 @@ suite pins that behaviour, so there is no guard against a regression.
 
 Raised and resolved 2026-08-14. Previously, when the duplicate pre-check *lost* a race — two
 concurrent requests both passed it and the database rejected the second insert — the client got a
-`500` rather than the declared `409`. `createDepartment`, `updateDepartment` and `createEmployee`
-now catch the constraint failure and return `409`; see
+`500` rather than the declared `409`. `createDepartment`, `updateDepartment`, `createEmployee` and
+`updateEmployee` now catch the constraint failure and return `409`; see
 [`MIGRATIONS.md`](MIGRATIONS.md) and [`FLUENT.md`](FLUENT.md).
 
 **The suite still does not cover it.** The existing duplicate-name tests exercise the pre-check

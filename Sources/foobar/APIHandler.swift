@@ -11,13 +11,11 @@ import Vapor
 /// without opening the spec. **`openapi.yaml` remains the source of truth** — these comments
 /// restate it for the reader, and must be updated when a declaration changes.
 ///
-/// Two things are true of every handler and are therefore not repeated on each one:
+/// One thing is true of every handler and is therefore not repeated on each one:
 ///
 /// - **Malformed input returns `500`, not `400`.** `swift-openapi-vapor` surfaces request-decoding
 ///   failures as unhandled errors. `500` is declared nowhere, so this breaks the contract on all
-///   seven operations. Tracked by #2; see `Docs/API-COVERAGE.md`.
-/// - **The two `401` declarations are unreachable.** No authentication exists anywhere in the
-///   project, so no code path can produce one. Tracked by #11.
+///   ten operations. Tracked by #2; see `Docs/API-COVERAGE.md` and `Docs/MIDDLEWARE.md`.
 struct APIHandler: APIProtocol {
     let database: Database
 
@@ -37,7 +35,6 @@ struct APIHandler: APIProtocol {
     /// `POST /api/departments`
     ///
     /// - `201` — the created department.
-    /// - `401` — declared by the spec, unreachable in practice (#11).
     /// - `409` — a department already holds that name. Returned from two places: the pre-check
     ///   below, and the `catch` that handles losing the race to another request.
     func createDepartment(_ input: Operations.CreateDepartment.Input) async throws -> Operations.CreateDepartment.Output
@@ -206,7 +203,6 @@ struct APIHandler: APIProtocol {
     /// `POST /api/employees`
     ///
     /// - `201` — the created employee.
-    /// - `401` — declared by the spec, unreachable in practice (#11).
     /// - `409` — an employee already has that first and last name, backed by the unique constraint
     ///   from `Migrations.AddEmployeeNameUniqueness`. Whether names *should* be unique is a
     ///   modelling limitation kept deliberately; see `Docs/API-DESIGN.md` §1.2 and #25.

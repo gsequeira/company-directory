@@ -46,8 +46,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Department"
-        "401":
-          description: The request was not authenticated.
         "409":
           description: A department with this name already exists.
           content:
@@ -143,8 +141,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Employee"
-        "401":
-          description: The request was not authenticated.
         "409":
           description: An employee with this name already exists.
           content:

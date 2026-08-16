@@ -443,8 +443,9 @@ current shape.
 **Filtering and search.** A directory eventually needs "find people whose name starts with…".
 Related to pagination, since both are query-parameter concerns on the same endpoints.
 
-**Authentication.** See the `401` section in [`API-COVERAGE.md`](API-COVERAGE.md). The spec
-currently declares `401` on two operations and implements none.
+**Authentication.** Not implemented, and no longer declared — #11 removed the two `401` blocks on
+2026-08-16 so the spec matches the server. The design is on #24 and the mechanism in
+[`MIDDLEWARE.md`](MIDDLEWARE.md).
 
 **A declared `400`.** No operation declares a response for malformed input, and the server
 currently answers `500`. Whatever fixes that should also add `400` to the spec — including on the

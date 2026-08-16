@@ -183,8 +183,11 @@ the department ones for reasons that have nothing to do with test quality.
 1. **`updateDepartment` 404 and 409.** Closes the declared-response gap. Both verified to behave
    correctly, so these land green.
 2. **One invalid-input test per shape** — bad path parameter, missing required field, malformed
-   JSON body. These will **fail** until the `400` mapping exists. Decide whether to land them red
-   as executable documentation of the defect, or hold them until the middleware is written.
+   JSON body. These will **fail** until the `400` mapping exists. ~~Decide whether to land them red
+   as executable documentation of the defect, or hold them until the middleware is written.~~
+   **Resolved 2026-08-16:** neither. Land them now inside `withKnownIssue`, asserting the `400`
+   they should return — the run stays green, and each test fails the moment #2 fixes it. See
+   [`TESTING.md`](TESTING.md) → *Step 7*.
 3. **`Int32.max + 1` as a regression test.** Given this used to take the process down, it earns a
    permanent guard regardless of which status it settles on.
 4. **Self-rename returns `200`.** Makes the `$id !=` filter load-bearing.

@@ -257,6 +257,52 @@ Thread `sourceLocation` through so a setup failure is reported at the **calling 
 every test that fails setup blames the same line inside `Tests/foobarTests/TestHelpers.swift`, and the failure list
 stops telling you which test broke.
 
+## Step 7 — Testing behaviour that is known to be wrong
+
+Sometimes the correct assertion fails, because the thing being asserted is a filed defect. Malformed
+input returning `500` instead of `400` (#2) is the standing example here.
+
+There are three ways to handle it and only one of them is good.
+
+| Approach | What it costs |
+| --- | --- |
+| Assert the wrong behaviour — `#expect(status == .internalServerError)` | A passing test is a claim the behaviour is **correct**. The fix then breaks a green test, and in the meantime the suite vouches for the defect |
+| Write nothing until the fix lands | The intended behaviour is undocumented, and nothing tells you when it starts working |
+| `withKnownIssue` | Nothing, if the issue is filed and scheduled |
+
+```swift
+@Test("PATCH with no body is rejected")
+func testMissingBody() async throws {
+    try await TestHelpers.withApplication { application in
+        await withKnownIssue("Malformed input returns 500 until #2 lands the error middleware") {
+            let response = try await application.sendRequest(.PATCH, "/api/departments/1")
+            #expect(response.status == .badRequest)
+        }
+    }
+}
+```
+
+The assertion states what *should* happen. While the defect exists the run stays green, and the
+moment someone fixes it the test **fails** — because Swift Testing reports an error when a known
+issue stops being recorded. The test is a tripwire that tells the fix it is finished.
+
+Both halves were verified on 2026-08-16 rather than taken from the documentation:
+
+```
+1: defect still present  recorded a known issue … (response.status → 500) == (.badRequest → 400)
+                         passed after 0.058 seconds with 1 known issue
+2: defect absent         recorded an issue: Known issue was not recorded
+                         failed after 0.041 seconds with 1 issue
+```
+
+**The condition on using it: one issue number in the comment, or do not use it.** Without that it
+becomes a place to park failures indefinitely, which is worse than having no test — the suite
+reports green while asserting nothing. `withKnownIssue` is for a defect that is filed and scheduled,
+not for one that is merely known.
+
+It also has a narrower use than commenting a test out, and should always win that comparison: a
+commented-out test is invisible to the runner and rots silently.
+
 ## Checklist
 
 Before committing a test:
@@ -276,4 +322,5 @@ Before committing a test:
 - `try #require(...)` — record, throw, stop. Also unwraps optionals.
 - `#expect(throws: SomeError.self) { ... }` — assert a call throws.
 - `withKnownIssue { ... }` — mark a known failure without failing the run; prefer over commenting
-  a test out, since it stays visible and flags up when it starts passing again.
+  a test out, since it stays visible and flags up when it starts passing again. See *Step 7* for
+  the conditions on using it.

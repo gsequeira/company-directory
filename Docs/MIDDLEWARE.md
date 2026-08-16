@@ -16,21 +16,63 @@ layer below the handlers.
 A middleware sits between the server and the router, and can read or alter the request on the way
 in, the response on the way out, or answer immediately without the router ever running.
 
-```swift
-public protocol Middleware: Sendable {
-    func respond(to request: Request, chainingTo next: Responder) -> EventLoopFuture<Response>
-}
+**Conform to `AsyncMiddleware`.** It is one `async throws` function:
 
+```swift
 public protocol AsyncMiddleware: Middleware {
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response
 }
 ```
 
-Write `AsyncMiddleware` — everything else in this codebase is `async`, and Vapor's own bundled
-middleware conform to it.
+A complete middleware is small — this is the authentication one from #24, in full:
 
-The `chainingTo next` parameter is what makes it a chain rather than a hook: calling `next` passes
-control inward, and *not* calling it short-circuits the request.
+```swift
+struct APIKeyMiddleware: AsyncMiddleware {
+    let expected: String
+
+    func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
+        guard let presented = request.headers.bearerAuthorization?.token,
+            constantTimeEquals(presented, expected)
+        else {
+            throw Abort(.unauthorized)
+        }
+
+        return try await next.respond(to: request)
+    }
+}
+```
+
+The `chainingTo next` parameter is what makes it a chain rather than a hook: `try await
+next.respond(to: request)` passes control inward, and returning — or throwing — without calling it
+short-circuits the request. Everything after that call runs on the way *out*, which is where a
+response would be altered.
+
+### Why the older `EventLoopFuture` protocol still exists
+
+`AsyncMiddleware` inherits from `Middleware`, which predates async/await and is declared in terms of
+futures:
+
+```swift
+func respond(to request: Request, chainingTo next: Responder) -> EventLoopFuture<Response>
+```
+
+**You never write that one.** `AsyncMiddleware` ships a default implementation of it that bridges to
+the async method, from `Concurrency/AsyncMiddleware.swift`:
+
+```swift
+extension AsyncMiddleware {
+    public func respond(to request: Request, chainingTo next: Responder) -> EventLoopFuture<Response> {
+        let promise = request.eventLoop.makePromise(of: Response.self)
+        promise.completeWithTask { ... }
+        return promise.futureResult
+    }
+}
+```
+
+So the future-based protocol is the primitive the server still speaks, and conforming to
+`AsyncMiddleware` is what keeps it out of your code. Worth knowing only because it explains why two
+protocols appear in the documentation for one concept — and because a compiler error mentioning
+`EventLoopFuture<Response>` usually means a conformance was written against `Middleware` by mistake.
 
 ## Why this API needs them at all
 
@@ -99,11 +141,31 @@ let transport = VaporTransport(routesBuilder: application.grouped(APIKeyMiddlewa
 
 Three things the middleware itself has to get right:
 
-- **Compare the credential in constant time.** `==` on strings short-circuits, leaking length and
-  prefix through timing.
+- **Compare the credential in constant time.** `==` on strings short-circuits on the first differing
+  byte, so response timing leaks how much of a guessed token was correct.
 - **Read the credential from the environment and fail startup if it is absent.** A default token is
   worse than no authentication, because the API looks protected.
 - **Throw `Abort(.unauthorized)`**, so the error middleware maps it correctly.
+
+`constantTimeEquals` in the example above is ours to write. swift-crypto has
+`constantTimeCompare`, but it is `internal` — checked, not assumed — so it cannot be called from
+here. The loop is short:
+
+```swift
+func constantTimeEquals(_ a: String, _ b: String) -> Bool {
+    let lhs = Array(a.utf8), rhs = Array(b.utf8)
+    guard lhs.count == rhs.count else { return false }
+
+    // No early exit: every byte is compared whatever the result.
+    var difference: UInt8 = 0
+    for index in lhs.indices { difference |= lhs[index] ^ rhs[index] }
+    return difference == 0
+}
+```
+
+Length still leaks, which is standard and not worth solving — knowing a token is 32 characters helps
+an attacker very little. Comparing SHA-256 digests of the two strings is the usual alternative and
+hides length too.
 
 ### The caveat that applies to every middleware here
 

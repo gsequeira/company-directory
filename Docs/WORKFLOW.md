@@ -133,7 +133,7 @@ those are the ones to respect:
 
 | Do first | Before | Why |
 | --- | --- | --- |
-| #2 | #14 | The invalid-input tests land red until the `400` mapping exists |
+| #14 | #2 | **Reversed 2026-08-16.** The invalid-input tests used to be blocked on the `400` mapping. Written inside `withKnownIssue` they land green now and fail when #2 fixes the defect — so they are #2's acceptance criteria. See [`TESTING.md`](TESTING.md) → *Step 7* |
 | #3 | Any new list-asserting test | Current ordering is accidental; write tests against it and the luck gets baked into assertions |
 | ~~#10~~ | #9 | `UpdateEmployeeRequest`'s shape *is* the PATCH decision. **Decided 2026-08-16** — partial update; see [`API-DESIGN.md`](API-DESIGN.md) §1.3. #9 is unblocked, and also carries the matching change to `UpdateDepartmentRequest` |
 | ~~#7, #8~~ | #9 | #9 mirrors the department handlers. Copy them unfixed and it is six sites to correct, not three. **Both merged** 2026-08-15/16 |

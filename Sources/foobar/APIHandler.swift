@@ -20,9 +20,6 @@ import Vapor
 ///   project, so no code path can produce one. Tracked by #11.
 struct APIHandler: APIProtocol {
     let database: Database
-    init(database: Database) {
-        self.database = database
-    }
 
     /// `GET /api/departments`
     ///

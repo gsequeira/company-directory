@@ -108,6 +108,28 @@ gh issue develop 18 --checkout --name 18-department-employee-relationship
 the branch to the issue, the PR and the commit without anyone having to remember what "the FK work"
 referred to.
 
+## The linked branch closes the issue, whatever the pull request says
+
+A linked branch is not only a display convenience. **When a pull request from that branch merges,
+GitHub closes the linked issue** — closing keywords are not consulted, and no wording in the pull
+request can prevent it.
+
+This has already cost once. #18 is three steps in three pull requests; the first said in its body,
+in bold, *"Part of #18 — step 1 of 3. Does not close it."* Merging it closed #18 anyway, and the
+issue timeline shows `connected` followed by `closed`. It went unnoticed until the issue counts were
+checked by hand a few hours later.
+
+**So for an issue that takes more than one pull request, do not use `gh issue develop`.** Create the
+branch directly, keeping the number in the name so the convention still holds:
+
+```bash
+git switch -c 18b-employee-department-model
+```
+
+Reference the issue in the body — `Part of #18` — and let the final pull request be the one that
+closes it, with `Closes #18`. The linkage is worth having when one branch finishes an issue, and is
+actively wrong when it does not.
+
 Suggested short names where the derived one is too long:
 
 | Issue | Branch |

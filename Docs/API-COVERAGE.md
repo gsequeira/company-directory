@@ -12,6 +12,10 @@ were re-checked after the move to PostgreSQL and the employee uniqueness migrati
 counts unchanged, but each added a gap — see *Constraint violations surface as 500* and the note on
 `createEmployee`'s 409 below.
 
+For exercising the API by hand rather than through the suite, see
+[`API-PLAYBOOK.md`](API-PLAYBOOK.md) — every operation with real captured output, including the
+four places the server currently answers wrongly.
+
 This is a status document and goes out of date as tests are added — unlike
 [`TESTING.md`](TESTING.md), which holds the conventions for writing them, and
 [`ISSUES.md`](ISSUES.md), which records specific defects. Re-check the tables below before

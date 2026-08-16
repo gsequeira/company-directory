@@ -27,8 +27,10 @@ sequencing, which puts most of the work below *after* the design phases.
 Every operation in the spec has at least one test, so there are no completely unexercised
 endpoints. Beneath that:
 
-- **11 of 15 declared responses are tested.**
-- **2 of the 4 gaps cannot be tested** — they are spec defects, not missing tests.
+- **20 of 22 declared responses are tested**, after #9 added three operations and #13/#16 closed
+  `updateDepartment`.
+- **Both remaining gaps cannot be tested** — the two `401`s are spec defects, not missing tests.
+  Every response the server can actually produce now has a test.
 - **Malformed input returns `500` on every endpoint**, an undeclared status that violates the
   contract everywhere. No test sends invalid input, which is why this went unnoticed.
 
@@ -56,6 +58,9 @@ endpoints. Beneath that:
 | `deleteDepartment` | 204, 404 | 204, 404 | — |
 | `listEmployees` | 200 | 200 | — |
 | `createEmployee` | 201, 401, 409 | 201, 409 | **401** |
+| `getEmployeeDetail` | 200, 404 | 200, 404 | — |
+| `updateEmployee` | 200, 404, 409 | 200, 404, 409 | — |
+| `deleteEmployee` | 204, 404 | 204, 404 | — |
 
 ### `updateDepartment` was the weak spot — closed 2026-08-16
 
@@ -186,10 +191,17 @@ line used to leave the whole suite passing. It now fails exactly one test, with 
 was expected. This is the "assertion that cannot fail" problem from Step 5 of [`TESTING.md`](TESTING.md),
 one level up: a whole branch with no test holding it in place.
 
-**The employee resource is a stub.** The spec declares only `GET` and `POST` on `/employees` —
-there is no detail, update or delete operation, and no `/employees/{employeeId}` path at all. That
-is a spec gap rather than a coverage gap, but it means the employee tests will look thin next to
-the department ones for reasons that have nothing to do with test quality.
+**~~The employee resource is a stub.~~ Closed 2026-08-16 (#9).** `/employees/{employeeId}` now
+declares `GET`, `PATCH` and `DELETE`, and all three are tested. The employee tests no longer look
+thin next to the department ones.
+
+**The merge in `updateEmployee` is not pinned by any test.** Under partial update the uniqueness
+pre-check must combine the supplied fields with the stored ones — patching only `firstName` still
+has to be checked against the stored `lastName`. Breaking that merge leaves all 30 tests passing,
+because the resulting row still violates the unique index and the `catch` returns the same `409`
+with the same body. This is the `updateDepartment` finding from #13 in a second place: the two
+`409` paths are indistinguishable from outside, so only the outcome is pinned, never the route to
+it. Belongs to #17.
 
 ## Recommended additions, in priority order
 

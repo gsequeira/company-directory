@@ -116,6 +116,9 @@ struct APIHandler: APIProtocol {
     ///   it already has, which is what the `$id !=` filter below exists for.
     /// - `404` — no department has that id.
     /// - `409` — another department already holds that name.
+    ///
+    /// `name` is optional: a body of `{}` changes nothing and returns the department unchanged.
+    /// See `Docs/API-DESIGN.md` §1.3 for why `PATCH` means partial update here.
     func updateDepartment(_ input: Operations.UpdateDepartment.Input) async throws -> Operations.UpdateDepartment.Output {
         let departmentId = input.path.departmentId
 
@@ -125,19 +128,23 @@ struct APIHandler: APIProtocol {
                 return .notFound(.init())
             }
 
-            if try await Models.Department.query(on: database)
-                .filter(\.$name == updateRequest.name)
-                .filter(\.$id != (try existingDepartment.requireID()))
-                .first() != nil
-            {
-                let conflictResponse = Components.Schemas.ConflictError(
-                    error: true,
-                    reason: "A department with the name '\(updateRequest.name)' already exists"
-                )
-                return .conflict(.init(body: .json(conflictResponse)))
-            }
+            // Only when a name was actually supplied. Without this guard an omitted `name` would
+            // query for `nil` and, worse, blank the column below.
+            if let newName = updateRequest.name {
+                if try await Models.Department.query(on: database)
+                    .filter(\.$name == newName)
+                    .filter(\.$id != (try existingDepartment.requireID()))
+                    .first() != nil
+                {
+                    let conflictResponse = Components.Schemas.ConflictError(
+                        error: true,
+                        reason: "A department with the name '\(newName)' already exists"
+                    )
+                    return .conflict(.init(body: .json(conflictResponse)))
+                }
 
-            existingDepartment.name = updateRequest.name
+                existingDepartment.name = newName
+            }
 
             do {
                 try await existingDepartment.save(on: database)
@@ -149,7 +156,7 @@ struct APIHandler: APIProtocol {
                         body: .json(
                             Components.Schemas.ConflictError(
                                 error: true,
-                                reason: "A department with the name '\(updateRequest.name)' already exists"
+                                reason: "A department with the name '\(existingDepartment.name)' already exists"
                             )
                         )
                     )
@@ -201,15 +208,12 @@ struct APIHandler: APIProtocol {
     /// - `409` — an employee already has that first and last name, backed by the unique constraint
     ///   from `Migrations.AddEmployeeNameUniqueness`. Whether names *should* be unique is a
     ///   modelling limitation kept deliberately; see `Docs/API-DESIGN.md` §1.2 and #25.
-    ///
-    /// There is no `GET`, `PATCH` or `DELETE` for a single employee yet — the resource is
-    /// write-once until #9 adds `/employees/{employeeId}`.
     func createEmployee(_ input: Operations.CreateEmployee.Input) async throws -> Operations.CreateEmployee.Output {
         switch input.body {
         case .json(let createRequest):
-            // Unlike departments, there is no unique index backing this check, so concurrent
-            // requests can create duplicate employees. Names are not required to be unique
-            // in the schema.
+            // See createDepartment: this check and the insert below are not atomic, and the
+            // unique constraint added by Migrations.AddEmployeeNameUniqueness is what actually
+            // prevents the duplicate by failing the second insert.
             if try await Models.Employee.query(on: database)
                 .filter(\.$firstName == createRequest.firstName)
                 .filter(\.$lastName == createRequest.lastName)
@@ -249,5 +253,100 @@ struct APIHandler: APIProtocol {
 
             return .created(.init(body: .json(employeeResponse)))
         }
+    }
+
+    /// `GET /api/employees/{employeeId}`
+    ///
+    /// - `200` — the employee.
+    /// - `404` — no employee has that id. Sent with an empty body, which is what distinguishes
+    ///   it from a routing `404`.
+    func getEmployeeDetail(_ input: Operations.GetEmployeeDetail.Input) async throws -> Operations.GetEmployeeDetail.Output {
+        let employeeId = input.path.employeeId
+
+        guard let employee = try await Models.Employee.find(employeeId, on: database) else {
+            return .notFound(.init())
+        }
+
+        let employeeResponse = try Components.Schemas.Employee(employee)
+
+        return .ok(.init(body: .json(employeeResponse)))
+    }
+
+    /// `PATCH /api/employees/{employeeId}`
+    ///
+    /// - `200` — the updated employee. A body of `{}` changes nothing and returns it unchanged.
+    /// - `404` — no employee has that id.
+    /// - `409` — another employee already has the resulting first and last name.
+    ///
+    /// Both fields are optional; omitted ones are left unchanged. See `Docs/API-DESIGN.md` §1.3.
+    func updateEmployee(_ input: Operations.UpdateEmployee.Input) async throws -> Operations.UpdateEmployee.Output {
+        let employeeId = input.path.employeeId
+
+        switch input.body {
+        case .json(let updateRequest):
+            guard let existingEmployee = try await Models.Employee.find(employeeId, on: database) else {
+                return .notFound(.init())
+            }
+
+            // The constraint is on the *pair*, so uniqueness must be checked against the values
+            // the row will end up with — not against what the request happened to supply. A PATCH
+            // sending only `firstName` still has to be checked against the stored `lastName`.
+            let newFirstName = updateRequest.firstName ?? existingEmployee.firstName
+            let newLastName = updateRequest.lastName ?? existingEmployee.lastName
+
+            // Excluding this employee's own row is what makes a no-op PATCH return 200 rather
+            // than conflicting with itself. Same reasoning as updateDepartment.
+            if try await Models.Employee.query(on: database)
+                .filter(\.$firstName == newFirstName)
+                .filter(\.$lastName == newLastName)
+                .filter(\.$id != (try existingEmployee.requireID()))
+                .first() != nil
+            {
+                let conflictResponse = Components.Schemas.ConflictError(
+                    error: true,
+                    reason: "An employee named '\(newFirstName) \(newLastName)' already exists"
+                )
+                return .conflict(.init(body: .json(conflictResponse)))
+            }
+
+            existingEmployee.firstName = newFirstName
+            existingEmployee.lastName = newLastName
+
+            do {
+                try await existingEmployee.save(on: database)
+            } catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+                // The pre-check lost the race: another request took this name in between.
+                return .conflict(
+                    .init(
+                        body: .json(
+                            Components.Schemas.ConflictError(
+                                error: true,
+                                reason: "An employee named '\(newFirstName) \(newLastName)' already exists"
+                            )
+                        )
+                    )
+                )
+            }
+
+            let employeeResponse = try Components.Schemas.Employee(existingEmployee)
+
+            return .ok(.init(body: .json(employeeResponse)))
+        }
+    }
+
+    /// `DELETE /api/employees/{employeeId}`
+    ///
+    /// - `204` — deleted, no body.
+    /// - `404` — no employee has that id.
+    func deleteEmployee(_ input: Operations.DeleteEmployee.Input) async throws -> Operations.DeleteEmployee.Output {
+        let employeeId = input.path.employeeId
+
+        guard let existingEmployee = try await Models.Employee.find(employeeId, on: database) else {
+            return .notFound(.init())
+        }
+
+        try await existingEmployee.delete(on: database)
+
+        return .noContent(.init())
     }
 }

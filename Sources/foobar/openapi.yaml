@@ -151,10 +151,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictError"
+  /employees/{employeeId}:
+    parameters:
+      - $ref: "#/components/parameters/path.employeeId"
+    get:
+      summary: Retrieve an employee
+      description: Retrieves the details of a single employee by ID.
+      operationId: getEmployeeDetail
+      tags:
+        - employees
+      responses:
+        "200":
+          description: The employee was retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "404":
+          description: No employee exists with the specified ID.
+    patch:
+      summary: Update an employee
+      description: Updates the first name, the last name, or both. Omitted fields are left unchanged.
+      operationId: updateEmployee
+      tags:
+        - employees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmployeeRequest"
+      responses:
+        "200":
+          description: The employee was updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "404":
+          description: No employee exists with the specified ID.
+        "409":
+          description: An employee with this name already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictError"
+    delete:
+      summary: Delete an employee
+      description: Permanently deletes an existing employee.
+      operationId: deleteEmployee
+      tags:
+        - employees
+      responses:
+        "204":
+          description: The employee was deleted successfully.
+        "404":
+          description: No employee exists with the specified ID.
 components:
   parameters:
     path.departmentId:
       name: departmentId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int32
+    path.employeeId:
+      name: employeeId
       in: path
       required: true
       schema:
@@ -197,8 +260,6 @@ components:
         name:
           description: The updated name for the department.
           type: string
-      required:
-        - name
     Employee:
       description: Represents an employee within the organization.
       properties:
@@ -238,6 +299,15 @@ components:
       required:
         - firstName
         - lastName
+    UpdateEmployeeRequest:
+      description: The fields to update. Omitted fields are left unchanged.
+      properties:
+        firstName:
+          description: The updated first name for the employee.
+          type: string
+        lastName:
+          description: The updated last name for the employee.
+          type: string
     ConflictError:
       description: Standard error response returned when a request conflicts with
         existing data.

@@ -39,12 +39,13 @@ service — then `swift test`.
 
 | Document | What it answers |
 | --- | --- |
+| [`WALKTHROUGH.md`](Docs/WALKTHROUGH.md) | What happens from process start to JSON, and why each piece looks like that |
 | [`LEARNING-PATH.md`](Docs/LEARNING-PATH.md) | What this project teaches, and what it deliberately does not |
 | [`API-PLAYBOOK.md`](Docs/API-PLAYBOOK.md) | Every endpoint exercised by hand, with real captured output |
 | [`API-DESIGN.md`](Docs/API-DESIGN.md) | What the API should contain, and the decisions behind it |
 | [`WORKFLOW.md`](Docs/WORKFLOW.md) | How a change gets made here, from issue to merge |
 
-The rest are reference, best reached from those four: `POSTGRES.md`, `FLUENT.md`, `MIGRATIONS.md`
+The rest are reference, best reached from those five: `POSTGRES.md`, `FLUENT.md`, `MIGRATIONS.md`
 and `TOOLCHAIN.md` for the stack; `TESTING.md`, `API-COVERAGE.md`, `ISSUES.md` and `CI.md` for the
 checks; `MIDDLEWARE.md` for what is planned; `ISSUE-LOG.md` for what has already been finished and
 which document absorbed each lesson.
@@ -60,9 +61,12 @@ Known, tracked, and documented rather than overlooked:
   detail in a non-release build ([#2](https://github.com/sequeiralabs/company-directory/issues/2)).
 - **There is no authentication.** Every request succeeds without a credential, and the spec no
   longer claims otherwise ([#24](https://github.com/sequeiralabs/company-directory/issues/24)).
-- **Employees and departments are not yet related.** The `department_id` column and its foreign key
-  exist; no operation reads or writes them
-  ([#18](https://github.com/sequeiralabs/company-directory/issues/18)).
+- **Empty names are accepted.** `""` is a valid department or employee name, because nothing in the
+  spec or the handlers imposes a minimum length
+  ([#12](https://github.com/sequeiralabs/company-directory/issues/12)).
+- **A database outage answers `500`, not `503`.** The distinction between "this server is broken"
+  and "a dependency is unreachable" is not made yet
+  ([#58](https://github.com/sequeiralabs/company-directory/issues/58)).
 
 [`API-PLAYBOOK.md`](Docs/API-PLAYBOOK.md) → *Where it answers wrongly* reproduces each one, so a
 surprising response can be checked against a known defect before it is debugged.

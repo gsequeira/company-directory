@@ -141,6 +141,38 @@ At that point the choice is:
 None is free. The comment in `APIHandler` names the hazard so it is not discovered by a confused
 user.
 
+## Resolved 2026-08-17 — both of the last two, not one
+
+#18 made the foreign key real, so #21 had to be answered. The answer was to take the third option
+*and* the first, because they solve different halves of the problem.
+
+**The pre-check is what produces a good response.** `createEmployee` looks the department up before
+saving, so the client is told `No department exists with id 999` rather than being handed a
+constraint failure to interpret. A pre-check alone would be enough if requests never interleaved.
+
+**SQLSTATE is what covers the race.** The department can be deleted between that lookup and the
+insert, and the resulting `foreignKeyViolation` still has to be distinguished from a duplicate
+name. `isConstraintFailure` cannot do it, so `ConstraintViolation` reads the SQLSTATE:
+
+```swift
+enum ConstraintViolation { case unique, foreignKey, other }
+```
+
+```swift
+} catch let error where ConstraintViolation(error) == .unique {
+```
+
+**The portability cost is real and confined to one file.** `ConstraintViolation.swift` is the only
+place in the project that imports `PostgresNIO`, and changing database means rewriting one
+initialiser rather than auditing four handlers. That containment is the whole reason it is a type
+rather than a condition written inline — the honest move when an abstraction cannot answer a
+question is to go around it in one marked place, not to pretend the question does not arise.
+
+A side effect worth noting: the four `catch` blocks are now *narrower* than they were. Anything
+that is neither a unique nor a foreign-key violation — a `NOT NULL` or `CHECK` failure, say —
+propagates and becomes a `500`. That is the correct answer for a constraint nobody anticipated,
+where the previous code would have reported a confident and wrong `409`.
+
 ## Why `model.id` is optional, and what to do about it
 
 `@ID var id: Int?` is optional for a real reason: the database assigns the value, so between `init`

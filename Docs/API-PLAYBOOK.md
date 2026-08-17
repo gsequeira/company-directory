@@ -3,13 +3,11 @@
 A run through every operation the server exposes, what it should answer, and the three places it
 currently answers something wrong.
 
-**Recorded 2026-08-16**, against `main` with Phase 1 complete. **Re-verified 2026-08-17 at
-`32c4ee4`**, this time by replaying the commands in order against a freshly truncated database
-rather than checking each response in isolation. That found both entity sections missing the
-creation of their second record — the rejected duplicate `POST` creates nothing, so ids 2 never
-existed and every case below them answered `404`. Both sections now run from `TRUNCATE` onward
-without manual setup, and `Scripts/playbook-replay.sh` now checks that mechanically — 29 commands,
-read out of this file. **Every response below is real
+**Recorded 2026-08-16**, against `main` with Phase 1 complete. **Rewritten 2026-08-17 for #18**,
+which gives every employee a department and adds the `422` and `409` cases below.
+`Scripts/playbook-replay.sh` replays this file against a running server and checks every status —
+**32 commands, all passing** — which is how the employee section's staleness was found the moment
+the relationship landed, rather than by reading. **Every response below is real
 output**, captured from a running server rather than written from the spec — the same standard as
 [`POSTGRES.md`](POSTGRES.md). If a response here disagrees with the one you get, the document is
 stale and the server is right.
@@ -38,6 +36,7 @@ Every status the spec declares, by entity. All of them are demonstrated below.
 | | `409` | Another department already holds that name |
 | `DELETE /api/departments/{id}` | `204` | Deleted; no body |
 | | `404` | No department with that id |
+| | `409` | Employees are still assigned to it; the reason says how many |
 
 ### Employees
 
@@ -46,11 +45,13 @@ Every status the spec declares, by entity. All of them are demonstrated below.
 | `GET /api/employees` | `200` | The list, possibly empty |
 | `POST /api/employees` | `201` | Created; body carries the assigned `id` |
 | | `409` | An employee already has that first and last name |
+| | `422` | The `departmentId` names no department |
 | `GET /api/employees/{id}` | `200` | The employee |
 | | `404` | No employee with that id; empty body |
 | `PATCH /api/employees/{id}` | `200` | Updated, or unchanged if the patch was empty |
 | | `404` | No employee with that id |
 | | `409` | The resulting first and last name are already taken |
+| | `422` | The `departmentId` names no department |
 | `DELETE /api/employees/{id}` | `204` | Deleted; no body |
 | | `404` | No employee with that id |
 
@@ -61,8 +62,8 @@ Every status the spec declares, by entity. All of them are demonstrated below.
 | `GET /health` | `200` | Registered outside the OpenAPI transport, so no `/api` prefix |
 | Any operation, malformed input | `500` | Undeclared and incorrect; should be `400` (#2) |
 
-Twenty declared statuses across ten operations, and every one of them has an automated test as well
-— see [`API-COVERAGE.md`](API-COVERAGE.md).
+Twenty-three declared statuses across ten operations, and every one of them has an automated test
+as well — see [`API-COVERAGE.md`](API-COVERAGE.md).
 
 ## Start it
 
@@ -188,15 +189,24 @@ status alone.
 
 ## Employees
 
-The same five operations, plus one difference worth seeing.
+The same five operations, plus the department relationship added by #18.
+
+Every employee belongs to a department, and the department has to exist first. Only `Engineering`
+(id 1) survives the department section above — `Sales` was deleted — so that is what these
+reference.
 
 ```console
-$ http POST :8080/api/employees firstName=Ada lastName=Lovelace        → 201
-{ "firstName" : "Ada", "id" : 1, "lastName" : "Lovelace" }
+$ http POST :8080/api/employees departmentId:=1 firstName=Ada lastName=Lovelace   → 201
+{ "departmentId" : 1, "firstName" : "Ada", "id" : 1, "lastName" : "Lovelace" }
 
-$ http POST :8080/api/employees firstName=Ada lastName=Lovelace        → 409
+$ http POST :8080/api/employees departmentId:=1 firstName=Ada lastName=Lovelace   → 409
 { "error" : true, "reason" : "An employee named 'Ada Lovelace' already exists" }
 ```
+
+**`departmentId:=1`, not `departmentId=1`.** HTTPie sends `key=value` as a JSON *string*, and the
+field is an integer. Sending `"1"` fails decoding before the handler is reached and returns `500`
+— the same defect as any other malformed input (#2), and easy to misread as a bug in this feature.
+`:=` sends a raw JSON value.
 
 Uniqueness applies to the pair, enforced by `Migrations.AddEmployeeNameUniqueness`: two employees
 may share a first name but not both names. This is a deliberate modelling limitation; see §1.2 and
@@ -206,15 +216,26 @@ As with departments, the rejected request created nothing, so employee 2 has to 
 explicitly. It shares the last name, which is what lets the patch cases below collide:
 
 ```console
-$ http POST :8080/api/employees firstName=Byron lastName=Lovelace      → 201
-{ "firstName" : "Byron", "id" : 2, "lastName" : "Lovelace" }
+$ http POST :8080/api/employees departmentId:=1 firstName=Byron lastName=Lovelace → 201
+{ "departmentId" : 1, "firstName" : "Byron", "id" : 2, "lastName" : "Lovelace" }
 ```
 
-Patching one field leaves the other unchanged:
+A `departmentId` naming no department is refused, and nothing is created:
+
+```console
+$ http POST :8080/api/employees departmentId:=999 firstName=Nobody lastName=Nowhere → 422
+{ "error" : true, "reason" : "No department exists with id 999" }
+```
+
+`422` rather than `404` because the resource being addressed — the employees collection — exists.
+What is missing is named in the payload. It also keeps the single-employee `404` below unambiguous,
+which one status serving both meanings would not.
+
+Patching one field leaves the others unchanged, the department included:
 
 ```console
 $ http PATCH :8080/api/employees/1 firstName=Augusta                   → 200
-{ "firstName" : "Augusta", "id" : 1, "lastName" : "Lovelace" }
+{ "departmentId" : 1, "firstName" : "Augusta", "id" : 1, "lastName" : "Lovelace" }
 ```
 
 The conflict check uses the resulting pair rather than the supplied fields:
@@ -232,6 +253,33 @@ $ http PATCH :8080/api/employees/2 firstName=Augusta                   → 409
 { "error" : true, "reason" : "An employee named 'Augusta Lovelace' already exists" }
 ```
 
+Supplying `departmentId` moves the employee. An unknown one is refused the same way as on create,
+and the employee is left untouched:
+
+```console
+$ http PATCH :8080/api/employees/2 departmentId:=999                   → 422
+{ "error" : true, "reason" : "No department exists with id 999" }
+```
+
+## Deleting a department that still has employees
+
+The one place the two resources visibly constrain each other. Both employees still reference
+`Engineering`:
+
+```console
+$ http DELETE :8080/api/departments/1                                  → 409
+{ "error" : true, "reason" : "Department 'Engineering' still has 2 employees assigned to it" }
+```
+
+This is refused twice over, and the redundancy is deliberate. The handler counts the employees
+first, which is what produces a message naming the number; the foreign key's `ON DELETE RESTRICT`
+refuses the statement regardless, which is what makes the count safe to be stale. Neither is
+sufficient alone — a constraint cannot explain itself, and a pre-check cannot be atomic. See
+[`API-DESIGN.md`](API-DESIGN.md) §2.4.
+
+Removing the employees first makes the same request succeed, which is the point: the restriction
+is on the reference, not on the department.
+
 ```console
 $ http DELETE :8080/api/employees/2
 HTTP/1.1 204 No Content
@@ -245,8 +293,9 @@ $ http PATCH  :8080/api/employees/999 firstName=Nobody   → 404, content-length
 $ http DELETE :8080/api/employees/999          → 404, content-length: 0
 ```
 
-`departmentId` does not appear in any response. The column exists in the database with an enforced
-foreign key (#18, step 1), but no operation reads or writes it yet.
+`departmentId` is read straight from the stored foreign key, so returning it costs no extra query
+and there is no N+1 here. That changes the day a response carries the department's *name* instead
+of its id — see [`FLUENT.md`](FLUENT.md) → *The N+1 problem*.
 
 ## Running it as a script
 

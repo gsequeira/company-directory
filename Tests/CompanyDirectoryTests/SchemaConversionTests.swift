@@ -37,12 +37,14 @@ struct SchemaConversionTests {
 
     @Test("A persisted employee converts to its response type")
     func testEmployeeConversion() throws {
-        let model = Models.Employee(firstName: "Ada", lastName: "Lovelace")
+        let model = Models.Employee(firstName: "Ada", lastName: "Lovelace", departmentID: 3)
         model.id = 7
 
         let schema = try Components.Schemas.Employee(model)
 
         #expect(schema.id == 7)
+        // Read from the stored foreign key, so no eager loading and no query.
+        #expect(schema.departmentId == 3)
         #expect(schema.firstName == "Ada")
         #expect(schema.lastName == "Lovelace")
     }
@@ -50,7 +52,8 @@ struct SchemaConversionTests {
     @Test("An unsaved employee throws rather than trapping")
     func testUnsavedEmployeeThrows() {
         #expect(throws: FluentError.self) {
-            try Components.Schemas.Employee(Models.Employee(firstName: "Never", lastName: "Saved"))
+            try Components.Schemas.Employee(
+                Models.Employee(firstName: "Never", lastName: "Saved", departmentID: 1))
         }
     }
 }

@@ -1,4 +1,8 @@
 import Fluent
+// `SQLDatabase` and `raw(_:)` come from SQLKit, which is not a declared dependency of this target
+// and does not need to be: FluentPostgresDriver re-exports it. `RequireEmployeeDepartment` is the
+// only migration that needs to drop below Fluent's schema builder — see the note there.
+import FluentPostgresDriver
 
 enum Migrations {
     struct CreateDepartments: AsyncMigration {
@@ -95,6 +99,91 @@ enum Migrations {
             try await database.schema(Models.Employee.schema)
                 .deleteField("department_id")
                 .update()
+        }
+    }
+
+    /// Step 2 of 3: give every existing employee a department (#18, #20).
+    ///
+    /// `RequireEmployeeDepartment` cannot apply `NOT NULL` while any row holds `NULL`, so those
+    /// rows have to be given a value first. This is the step that only matters against real data:
+    /// the test suite reverts migrations between tests and therefore always runs this against an
+    /// empty table, where it does nothing at all. `Docs/MIGRATIONS.md` records why that blind spot
+    /// makes a populated development database the only honest place to prove this works.
+    ///
+    /// Employees with no department are assigned to one named `Unassigned`, created here if it is
+    /// not already present. Inventing a placeholder is a real decision rather than an obvious one:
+    /// the alternative is refusing to migrate until a human assigns each row, which is safer for
+    /// data and useless for a project whose whole point is that the migration runs unattended at
+    /// startup. The placeholder is visible in the API, so nothing is hidden — an employee whose
+    /// department reads `Unassigned` is a row somebody still needs to look at.
+    struct BackfillEmployeeDepartment: AsyncMigration {
+        static let placeholderName = "Unassigned"
+
+        func prepare(on database: any Database) async throws {
+            let orphaned = try await Models.Employee.query(on: database)
+                .filter(\.$department.$id == .null)
+                .count()
+
+            guard orphaned > 0 else { return }
+
+            let existing = try await Models.Department.query(on: database)
+                .filter(\.$name == Self.placeholderName)
+                .first()
+
+            let placeholder: Models.Department
+            if let existing {
+                placeholder = existing
+            } else {
+                placeholder = Models.Department(name: Self.placeholderName)
+                try await placeholder.save(on: database)
+            }
+
+            try await Models.Employee.query(on: database)
+                .filter(\.$department.$id == .null)
+                .set(\.$department.$id, to: try placeholder.requireID())
+                .update()
+        }
+
+        /// Deliberately does nothing.
+        ///
+        /// A revert cannot know which rows this filled in, so restoring `NULL` would blank
+        /// departments that were set legitimately afterwards. The placeholder department is left
+        /// in place for the same reason — deleting it would fail against any employee still
+        /// pointing at it. Reverting step 3 is what makes the column nullable again; this step
+        /// has nothing to undo that is safe to undo.
+        func revert(on database: any Database) async throws {}
+    }
+
+    /// Step 3 of 3: make the department mandatory at the database level (#18, #20).
+    ///
+    /// **This one needs raw SQL.** Fluent's `DatabaseSchema.FieldUpdate` offers exactly two
+    /// cases, `.dataType` and `.custom`, so the schema builder can change a column's *type* but
+    /// cannot add a constraint to a column that already exists. `.field(...)` with `.required`
+    /// would emit `ADD COLUMN`, which fails because the column is already there.
+    ///
+    /// `SQLKit` arrives through `FluentPostgresDriver`'s `@_exported` imports, so reaching for it
+    /// costs no new dependency — but it does cost portability, which is why the cast is explicit
+    /// and fails loudly rather than silently skipping on a database that is not SQL-backed.
+    struct RequireEmployeeDepartment: AsyncMigration {
+        private func sql(_ database: any Database) throws -> any SQLDatabase {
+            guard let sql = database as? any SQLDatabase else {
+                throw DatabaseSetupError.migrationFailed(
+                    "RequireEmployeeDepartment needs a SQL database; got \(type(of: database))"
+                )
+            }
+            return sql
+        }
+
+        func prepare(on database: any Database) async throws {
+            try await sql(database).raw(
+                "ALTER TABLE employees ALTER COLUMN department_id SET NOT NULL"
+            ).run()
+        }
+
+        func revert(on database: any Database) async throws {
+            try await sql(database).raw(
+                "ALTER TABLE employees ALTER COLUMN department_id DROP NOT NULL"
+            ).run()
         }
     }
 }

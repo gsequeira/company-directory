@@ -32,6 +32,11 @@ extension Components.Schemas.Employee {
     init(_ model: Models.Employee) throws {
         self.init(
             id: Int(try model.requireID()),
+            // `$department.id` is the stored foreign key, so this reads a column that is already
+            // on the fetched row. Using `model.department.id` instead would require the relation
+            // to have been eager-loaded and would trap when it had not — and, once loaded per
+            // employee, would be the N+1 in `Docs/FLUENT.md`.
+            departmentId: model.$department.id,
             firstName: model.firstName,
             lastName: model.lastName
         )

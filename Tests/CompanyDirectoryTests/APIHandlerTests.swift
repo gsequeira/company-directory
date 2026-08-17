@@ -283,7 +283,9 @@ struct APIHandlerIntegrationTests {
     @Test("POST /api/employees creates a new employee successfully")
     func testCreateEmployeeSuccess() async throws {
         try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
             let createRequest = Components.Schemas.CreateEmployeeRequest(
+                departmentId: departmentId,
                 firstName: "Jane",
                 lastName: "Doe"
             )
@@ -302,7 +304,9 @@ struct APIHandlerIntegrationTests {
     @Test("POST /api/employees returns conflict for duplicate employees")
     func testCreateEmployeeDuplicateName() async throws {
         try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
             let createRequest = Components.Schemas.CreateEmployeeRequest(
+                departmentId: departmentId,
                 firstName: "Jane",
                 lastName: "Doe"
             )
@@ -336,8 +340,11 @@ struct APIHandlerIntegrationTests {
     @Test("GET /api/employees returns a list of employees when employees exist")
     func testListEmployeesWithData() async throws {
         try await TestHelpers.withApplication { application in
-            let employee1 = Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace")
-            let employee2 = Components.Schemas.CreateEmployeeRequest(firstName: "Grace", lastName: "Hopper")
+            let departmentId = try await TestHelpers.createDepartment(application)
+            let employee1 = Components.Schemas.CreateEmployeeRequest(
+                departmentId: departmentId, firstName: "Ada", lastName: "Lovelace")
+            let employee2 = Components.Schemas.CreateEmployeeRequest(
+                departmentId: departmentId, firstName: "Grace", lastName: "Hopper")
 
             // Create two employees
             let response1 = try await application.sendRequest(.POST, "/api/employees", body: employee1)
@@ -358,9 +365,11 @@ struct APIHandlerIntegrationTests {
     @Test("GET /api/employees/{employeeId} returns specific employee when it exists")
     func testGetEmployeeDetailSuccess() async throws {
         try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
             let createResponse = try await application.sendRequest(
                 .POST, "/api/employees",
-                body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Ada", lastName: "Lovelace"))
             try #require(createResponse.status == .created)
             let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
 
@@ -391,9 +400,11 @@ struct APIHandlerIntegrationTests {
     @Test("PATCH /api/employees/{employeeId} updates one field and leaves the other unchanged")
     func testUpdateEmployeePartial() async throws {
         try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
             let createResponse = try await application.sendRequest(
                 .POST, "/api/employees",
-                body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Ada", lastName: "Lovelace"))
             try #require(createResponse.status == .created)
             let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
 
@@ -417,9 +428,11 @@ struct APIHandlerIntegrationTests {
     @Test("PATCH /api/employees/{employeeId} with an empty body changes nothing")
     func testUpdateEmployeeEmptyBody() async throws {
         try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
             let createResponse = try await application.sendRequest(
                 .POST, "/api/employees",
-                body: Components.Schemas.CreateEmployeeRequest(firstName: "Grace", lastName: "Hopper"))
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Grace", lastName: "Hopper"))
             try #require(createResponse.status == .created)
             let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
 
@@ -441,14 +454,17 @@ struct APIHandlerIntegrationTests {
     @Test("PATCH /api/employees/{employeeId} returns conflict when the resulting name is taken")
     func testUpdateEmployeeDuplicateName() async throws {
         try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
             let firstResponse = try await application.sendRequest(
                 .POST, "/api/employees",
-                body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Ada", lastName: "Lovelace"))
             try #require(firstResponse.status == .created)
 
             let secondResponse = try await application.sendRequest(
                 .POST, "/api/employees",
-                body: Components.Schemas.CreateEmployeeRequest(firstName: "Grace", lastName: "Lovelace"))
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Grace", lastName: "Lovelace"))
             try #require(secondResponse.status == .created)
             let secondEmployee = try secondResponse.content.decode(Components.Schemas.Employee.self)
 
@@ -482,9 +498,11 @@ struct APIHandlerIntegrationTests {
     @Test("DELETE /api/employees/{employeeId} deletes existing employee successfully")
     func testDeleteEmployeeSuccess() async throws {
         try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
             let createResponse = try await application.sendRequest(
                 .POST, "/api/employees",
-                body: Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: "Lovelace"))
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Ada", lastName: "Lovelace"))
             try #require(createResponse.status == .created)
             let createdEmployee = try createResponse.content.decode(Components.Schemas.Employee.self)
 
@@ -527,6 +545,182 @@ struct APIHandlerIntegrationTests {
             let updatedDepartment = try response.content.decode(Components.Schemas.Department.self)
             #expect(updatedDepartment.id == createdDepartment.id)
             #expect(updatedDepartment.name == "Engineering")
+        }
+    }
+
+    // MARK: - The department relationship (#18)
+
+    @Test("POST /api/employees rejects a departmentId that does not exist")
+    func testCreateEmployeeUnknownDepartment() async throws {
+        try await TestHelpers.withApplication { application in
+            let response = try await application.sendRequest(
+                .POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: 999, firstName: "Ada", lastName: "Lovelace"))
+
+            // 422 rather than 404: the addressed resource is the employees collection, which
+            // exists. What is missing is named in the payload. A 404 here would also collide with
+            // the 404 that means "no such employee" on the single-employee routes.
+            #expect(response.status == .unprocessableEntity)
+
+            let referenceError = try response.content.decode(Components.Schemas.ReferenceError.self)
+            #expect(referenceError.error == true)
+            #expect(referenceError.reason.contains("999"))
+
+            // The request must not have created anything.
+            let list = try await application.sendRequest(.GET, "/api/employees")
+            let employees = try list.content.decode(Components.Schemas.EmployeeList.self)
+            #expect(employees.employees.isEmpty)
+        }
+    }
+
+    @Test("PATCH /api/employees/{employeeId} moves an employee to another department")
+    func testUpdateEmployeeMovesDepartment() async throws {
+        try await TestHelpers.withApplication { application in
+            let engineering = try await TestHelpers.createDepartment(application, named: "Engineering")
+            let sales = try await TestHelpers.createDepartment(application, named: "Sales")
+
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: engineering, firstName: "Ada", lastName: "Lovelace"))
+            try #require(createResponse.status == .created)
+            let created = try createResponse.content.decode(Components.Schemas.Employee.self)
+            try #require(created.departmentId == engineering)
+
+            let response = try await application.sendRequest(
+                .PATCH, "/api/employees/\(created.id)",
+                body: Components.Schemas.UpdateEmployeeRequest(departmentId: sales))
+
+            #expect(response.status == .ok)
+
+            let updated = try response.content.decode(Components.Schemas.Employee.self)
+            #expect(updated.departmentId == sales)
+            // The names were not supplied and must be untouched — the same partial-update rule
+            // the department now follows.
+            #expect(updated.firstName == "Ada")
+            #expect(updated.lastName == "Lovelace")
+        }
+    }
+
+    @Test("PATCH /api/employees/{employeeId} rejects a departmentId that does not exist")
+    func testUpdateEmployeeUnknownDepartment() async throws {
+        try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
+
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Ada", lastName: "Lovelace"))
+            try #require(createResponse.status == .created)
+            let created = try createResponse.content.decode(Components.Schemas.Employee.self)
+
+            let response = try await application.sendRequest(
+                .PATCH, "/api/employees/\(created.id)",
+                body: Components.Schemas.UpdateEmployeeRequest(departmentId: 999))
+
+            #expect(response.status == .unprocessableEntity)
+
+            // The employee must be unchanged, not partially updated.
+            let refetched = try await application.sendRequest(.GET, "/api/employees/\(created.id)")
+            let unchanged = try refetched.content.decode(Components.Schemas.Employee.self)
+            #expect(unchanged.departmentId == departmentId)
+        }
+    }
+
+    @Test("PATCH /api/employees/{employeeId} leaves the department alone when it is omitted")
+    func testUpdateEmployeeKeepsDepartmentWhenOmitted() async throws {
+        try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
+
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Ada", lastName: "Lovelace"))
+            try #require(createResponse.status == .created)
+            let created = try createResponse.content.decode(Components.Schemas.Employee.self)
+
+            let response = try await application.sendRequest(
+                .PATCH, "/api/employees/\(created.id)",
+                body: Components.Schemas.UpdateEmployeeRequest(firstName: "Augusta"))
+
+            #expect(response.status == .ok)
+
+            let updated = try response.content.decode(Components.Schemas.Employee.self)
+            #expect(updated.firstName == "Augusta")
+            #expect(updated.departmentId == departmentId)
+        }
+    }
+
+    @Test("DELETE /api/departments/{departmentId} refuses while employees are assigned")
+    func testDeleteDepartmentWithEmployeesConflicts() async throws {
+        try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
+
+            for name in ["Lovelace", "Hopper"] {
+                let created = try await application.sendRequest(
+                    .POST, "/api/employees",
+                    body: Components.Schemas.CreateEmployeeRequest(
+                        departmentId: departmentId, firstName: "Ada", lastName: name))
+                try #require(created.status == .created)
+            }
+
+            let response = try await application.sendRequest(.DELETE, "/api/departments/\(departmentId)")
+
+            #expect(response.status == .conflict)
+
+            let conflictError = try response.content.decode(Components.Schemas.ConflictError.self)
+            // The count is the point of the pre-check: the foreign key alone can refuse the
+            // delete but cannot say how many rows are in the way.
+            #expect(conflictError.reason.contains("2 employees"))
+
+            // The department must still be there.
+            let stillThere = try await application.sendRequest(.GET, "/api/departments/\(departmentId)")
+            #expect(stillThere.status == .ok)
+        }
+    }
+
+    @Test("DELETE /api/departments/{departmentId} succeeds once its employees are gone")
+    func testDeleteDepartmentAfterEmployeesRemoved() async throws {
+        try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
+
+            let createResponse = try await application.sendRequest(
+                .POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Ada", lastName: "Lovelace"))
+            try #require(createResponse.status == .created)
+            let created = try createResponse.content.decode(Components.Schemas.Employee.self)
+
+            try #require(
+                try await application.sendRequest(.DELETE, "/api/departments/\(departmentId)").status
+                    == .conflict)
+
+            let employeeDeleted = try await application.sendRequest(.DELETE, "/api/employees/\(created.id)")
+            try #require(employeeDeleted.status == .noContent)
+
+            // Same request, now permitted. The restriction is on the reference, not the department.
+            let response = try await application.sendRequest(.DELETE, "/api/departments/\(departmentId)")
+            #expect(response.status == .noContent)
+        }
+    }
+
+    @Test("The singular reason reads correctly for one employee")
+    func testDeleteDepartmentConflictSingularWording() async throws {
+        try await TestHelpers.withApplication { application in
+            let departmentId = try await TestHelpers.createDepartment(application)
+
+            let created = try await application.sendRequest(
+                .POST, "/api/employees",
+                body: Components.Schemas.CreateEmployeeRequest(
+                    departmentId: departmentId, firstName: "Ada", lastName: "Lovelace"))
+            try #require(created.status == .created)
+
+            let response = try await application.sendRequest(.DELETE, "/api/departments/\(departmentId)")
+
+            let conflictError = try response.content.decode(Components.Schemas.ConflictError.self)
+            #expect(conflictError.reason.contains("1 employee "))
+            #expect(!conflictError.reason.contains("1 employees"))
         }
     }
 }

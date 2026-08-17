@@ -30,6 +30,30 @@ Isolation now comes from two mechanisms that only work together:
 
 Remove either and tests corrupt each other. Both carry comments saying so; leave them there.
 
+**There is a third rule, learned the hard way on 2026-08-17: every database-touching test belongs
+to the *same* suite.** `.serialized` orders tests within a suite. It does not serialize one suite
+against another, and Swift Testing runs separate suites in parallel by default. #18 added a second
+`@Suite` over the same database, and both suites failed almost entirely — each one's
+`autoRevert()` dropping the other's tables mid-test, surfacing as
+`relation "departments" does not exist` in migrations that had just succeeded.
+
+The symptom is worth recognising because it does not look like a concurrency problem. It looks
+like a broken migration, and the failure lands in whichever test happened to be running rather
+than in the one that caused it.
+
+The fix is to declare new database tests in an extension of the existing suite rather than a suite
+of their own:
+
+```swift
+extension APIHandlerIntegrationTests {
+    @Test("...") func testSomething() async throws { ... }
+}
+```
+
+`Tests/CompanyDirectoryTests/ForeignKeyTests.swift` is a separate *file* on exactly this basis —
+its own file for readability, the same suite for isolation. `SchemaConversionTests` is a genuinely
+separate suite and stays one, because it touches no database.
+
 Two consequences for how you write tests. You can still assume an empty database at the start of
 every test, exactly as before — that assumption is now *earned* rather than free. And do not add
 `.serialized`-defeating tricks like spawning concurrent work that outlives the test body, because

@@ -243,6 +243,21 @@ A department has many employees; an employee belongs to one department.
 
 ## 2.1 Spec changes
 
+**Implemented 2026-08-17 (#18), with one departure from the sketch below.** `departmentId` is on
+`Employee`, `CreateEmployeeRequest` and — not anticipated here — `UpdateEmployeeRequest`, so an
+employee can be moved between departments. It is optional there, following the same partial-update
+rule as the names.
+
+The response for an unknown department is **`422`, not the `404` this section proposed.** `404`
+does not survive contact with `updateEmployee`, which already returns `404` with an empty body to
+mean *no such employee*, and where the empty body is what distinguishes a handler `404` from a
+routing one. One status cannot carry both meanings on the same operation, and OpenAPI cannot
+declare a response whose body is sometimes present. `422 Unprocessable Content` says what is
+actually true: the request is well-formed and the addressed resource exists, but something it
+names does not. `ReferenceError` is the body schema.
+
+`deleteDepartment` also gains `409`, per §2.4.
+
 Add `departmentId` to the `Employee` schema and to `CreateEmployeeRequest`:
 
 ```yaml
@@ -316,6 +331,12 @@ useful thing this project has demonstrated about picking a database.
 Note also that this is a new migration, not an edit to `CreateEmployees` — that one has already run
 here. Adding a `.required` column to a table that already holds rows needs care, and the sequence
 is covered in [`MIGRATIONS.md`](MIGRATIONS.md).
+
+**Done 2026-08-17.** The one-line sketch above turned into three migrations, because `.required`
+cannot be applied to a column that already exists: `AddEmployeeDepartment` (nullable, foreign key
+live), `BackfillEmployeeDepartment`, then `RequireEmployeeDepartment`, which needs raw SQL. The
+negative test was written first and passed immediately, which is the payoff described above —
+`Tests/CompanyDirectoryTests/ForeignKeyTests.swift`.
 
 ## 2.4 Decision — what `DELETE /departments/{id}` does with employees
 

@@ -108,6 +108,12 @@ paths:
           description: The department was deleted successfully.
         "404":
           description: No department exists with the specified ID.
+        "409":
+          description: The department still has employees assigned to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictError"
   /employees:
     get:
       summary: List employees
@@ -147,6 +153,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictError"
+        "422":
+          description: The specified departmentId does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferenceError"
   /employees/{employeeId}:
     parameters:
       - $ref: "#/components/parameters/path.employeeId"
@@ -192,6 +204,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictError"
+        "422":
+          description: The specified departmentId does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferenceError"
     delete:
       summary: Delete an employee
       description: Permanently deletes an existing employee.
@@ -262,6 +280,11 @@ components:
         id:
           type: integer
           description: The primary key of the employee.
+        departmentId:
+          type: integer
+          format: int32
+          description: The department this employee belongs to.
+          example: 1
         firstName:
           type: string
           description: The first name of the employee.
@@ -272,6 +295,7 @@ components:
           example: Doe
       required:
         - id
+        - departmentId
         - firstName
         - lastName
     EmployeeList:
@@ -286,6 +310,11 @@ components:
     CreateEmployeeRequest:
       description: The payload required to create a new employee.
       properties:
+        departmentId:
+          description: The department to place this employee in. Must already exist.
+          type: integer
+          format: int32
+          example: 1
         firstName:
           description: The first name of the employee.
           type: string
@@ -293,17 +322,38 @@ components:
           description: The last name of the employee.
           type: string
       required:
+        - departmentId
         - firstName
         - lastName
     UpdateEmployeeRequest:
       description: The fields to update. Omitted fields are left unchanged.
       properties:
+        departmentId:
+          description: The department to move this employee to. Must already exist.
+          type: integer
+          format: int32
+          example: 2
         firstName:
           description: The updated first name for the employee.
           type: string
         lastName:
           description: The updated last name for the employee.
           type: string
+    ReferenceError:
+      description: >-
+        Returned when a request is well-formed and addresses an existing resource, but names
+        another resource in its payload that does not exist — currently only an unknown
+        departmentId on an employee.
+      properties:
+        error:
+          type: boolean
+          example: true
+        reason:
+          type: string
+          example: No department exists with id 42
+      required:
+        - error
+        - reason
     ConflictError:
       description: Standard error response returned when a request conflicts with
         existing data.

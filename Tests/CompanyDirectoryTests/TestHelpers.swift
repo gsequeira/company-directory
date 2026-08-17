@@ -59,6 +59,27 @@ struct TestHelpers {
             throw error
         }
     }
+
+    /// Creates a department and returns its id.
+    ///
+    /// Since #18 an employee cannot exist without one, so most employee tests now open with this
+    /// line. It goes through the API rather than inserting the model directly, so the setup keeps
+    /// exercising the same path a client takes — a regression in `createDepartment` fails these
+    /// tests loudly instead of leaving them passing against data no client could have produced.
+    static func createDepartment(
+        _ application: Application,
+        named name: String = "Engineering"
+    ) async throws -> Int32 {
+        let response = try await application.sendRequest(
+            .POST, "/api/departments",
+            body: Components.Schemas.CreateDepartmentRequest(name: name))
+
+        try #require(response.status == .created)
+
+        let department = try response.content.decode(Components.Schemas.Department.self)
+
+        return Int32(department.id)
+    }
 }
 
 extension Application {

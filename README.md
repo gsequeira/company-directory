@@ -27,7 +27,7 @@ No `.env` is needed — the compiled defaults match `docker-compose.yml`. Then, 
 ```bash
 http GET :8080/health                 # /health sits outside the OpenAPI transport, so no /api
 http GET :8080/api/departments        # the list, empty until you create one
-Scripts/smoke.sh                      # 19 checks against the running server
+Scripts/smoke.sh                      # exercises the whole API against the running server
 ```
 
 To run the suite instead, `docker compose up -d --wait` — the tests need the separate `db-test`

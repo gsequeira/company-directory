@@ -3,7 +3,12 @@
 A run through every operation the server exposes, what it should answer, and the three places it
 currently answers something wrong.
 
-**Recorded 2026-08-16**, against `main` with Phase 1 complete. **Re-verified the same day at `2cac69f`**, after the project was renamed — 29 status assertions replayed, no mismatches, and both automated paths below still pass. **Every response below is real
+**Recorded 2026-08-16**, against `main` with Phase 1 complete. **Re-verified 2026-08-17 at
+`32c4ee4`**, this time by replaying the commands in order against a freshly truncated database
+rather than checking each response in isolation. That found both entity sections missing the
+creation of their second record — the rejected duplicate `POST` creates nothing, so ids 2 never
+existed and every case below them answered `404`. Both sections now run from `TRUNCATE` onward
+without manual setup. **Every response below is real
 output**, captured from a running server rather than written from the spec — the same standard as
 [`POSTGRES.md`](POSTGRES.md). If a response here disagrees with the one you get, the document is
 stale and the server is right.
@@ -106,6 +111,16 @@ HTTP/1.1 409 Conflict
 This `409` may originate either from the pre-check in the handler or from the unique index
 rejecting a write that lost a race. The two are indistinguishable from outside; see #17.
 
+The rejected request created nothing, so a second department has to be created explicitly. The
+update and delete cases below act on it, leaving `Engineering` in place as the name to collide with:
+
+```console
+$ http POST :8080/api/departments name=Sales
+HTTP/1.1 201 Created
+
+{ "id" : 2, "name" : "Sales" }
+```
+
 ### Read
 
 ```console
@@ -185,6 +200,14 @@ $ http POST :8080/api/employees firstName=Ada lastName=Lovelace
 Uniqueness applies to the pair, enforced by `Migrations.AddEmployeeNameUniqueness`: two employees
 may share a first name but not both names. This is a deliberate modelling limitation; see §1.2 and
 #25.
+
+As with departments, the rejected request created nothing, so employee 2 has to be created
+explicitly. It shares the last name, which is what lets the patch cases below collide:
+
+```console
+$ http POST :8080/api/employees firstName=Byron lastName=Lovelace
+{ "firstName" : "Byron", "id" : 2, "lastName" : "Lovelace" }
+```
 
 Patching one field leaves the other unchanged:
 

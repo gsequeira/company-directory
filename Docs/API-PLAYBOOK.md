@@ -8,7 +8,8 @@ currently answers something wrong.
 rather than checking each response in isolation. That found both entity sections missing the
 creation of their second record — the rejected duplicate `POST` creates nothing, so ids 2 never
 existed and every case below them answered `404`. Both sections now run from `TRUNCATE` onward
-without manual setup. **Every response below is real
+without manual setup, and `Scripts/playbook-replay.sh` now checks that mechanically — 29 commands,
+read out of this file. **Every response below is real
 output**, captured from a running server rather than written from the spec — the same standard as
 [`POSTGRES.md`](POSTGRES.md). If a response here disagrees with the one you get, the document is
 stale and the server is right.
@@ -84,7 +85,7 @@ docker compose exec -T db psql -U company_directory -d company_directory \
 `/health` is registered outside the OpenAPI transport and therefore has no `/api` prefix:
 
 ```console
-$ http GET :8080/health
+$ http GET :8080/health                                                → 200
 {"environment":"development","uptime":1,"timestamp":"2026-08-16T10:10:55Z","checks":{},"status":"ok"}
 ```
 
@@ -124,7 +125,7 @@ HTTP/1.1 201 Created
 ### Read
 
 ```console
-$ http GET :8080/api/departments/1
+$ http GET :8080/api/departments/1                                     → 200
 { "id" : 1, "name" : "Engineering" }
 
 $ http GET :8080/api/departments/999
@@ -139,7 +140,7 @@ handler and no row matched. The test suite asserts on this difference.
 ### Update, including the three cases worth checking
 
 ```console
-$ http PATCH :8080/api/departments/2 name="Sales and Marketing"
+$ http PATCH :8080/api/departments/2 name="Sales and Marketing"        → 200
 { "id" : 2, "name" : "Sales and Marketing" }
 ```
 
@@ -153,7 +154,7 @@ HTTP/1.1 200 OK
 Renaming onto a name another department holds returns `409`:
 
 ```console
-$ http PATCH :8080/api/departments/2 name=Engineering
+$ http PATCH :8080/api/departments/2 name=Engineering                  → 409
 { "error" : true, "reason" : "A department with the name 'Engineering' already exists" }
 ```
 
@@ -190,10 +191,10 @@ status alone.
 The same five operations, plus one difference worth seeing.
 
 ```console
-$ http POST :8080/api/employees firstName=Ada lastName=Lovelace
+$ http POST :8080/api/employees firstName=Ada lastName=Lovelace        → 201
 { "firstName" : "Ada", "id" : 1, "lastName" : "Lovelace" }
 
-$ http POST :8080/api/employees firstName=Ada lastName=Lovelace
+$ http POST :8080/api/employees firstName=Ada lastName=Lovelace        → 409
 { "error" : true, "reason" : "An employee named 'Ada Lovelace' already exists" }
 ```
 
@@ -205,26 +206,31 @@ As with departments, the rejected request created nothing, so employee 2 has to 
 explicitly. It shares the last name, which is what lets the patch cases below collide:
 
 ```console
-$ http POST :8080/api/employees firstName=Byron lastName=Lovelace
+$ http POST :8080/api/employees firstName=Byron lastName=Lovelace      → 201
 { "firstName" : "Byron", "id" : 2, "lastName" : "Lovelace" }
 ```
 
 Patching one field leaves the other unchanged:
 
 ```console
-$ http PATCH :8080/api/employees/1 firstName=Augusta
+$ http PATCH :8080/api/employees/1 firstName=Augusta                   → 200
 { "firstName" : "Augusta", "id" : 1, "lastName" : "Lovelace" }
 ```
 
 The conflict check uses the resulting pair rather than the supplied fields:
 
 ```console
-$ http PATCH :8080/api/employees/2 firstName=Augusta lastName=Lovelace
+$ http PATCH :8080/api/employees/2 firstName=Augusta lastName=Lovelace → 409
 { "error" : true, "reason" : "An employee named 'Augusta Lovelace' already exists" }
 ```
 
-Sending only `firstName=Augusta` to employee 2 collides identically: the check combines the
-supplied field with the stored one before querying.
+Sending only `firstName=Augusta` collides identically, because the check combines the supplied
+field with the stored one before querying. Employee 2's stored last name is already `Lovelace`:
+
+```console
+$ http PATCH :8080/api/employees/2 firstName=Augusta                   → 409
+{ "error" : true, "reason" : "An employee named 'Augusta Lovelace' already exists" }
+```
 
 ```console
 $ http DELETE :8080/api/employees/2
@@ -330,6 +336,37 @@ required field to `Employee` breaks this file at compile time rather than at som
 The shell version keeps its place because it needs neither a toolchain nor the repository, which is
 what a smoke test against a deployed server actually requires.
 
+### Replaying this document
+
+`Scripts/playbook-replay.sh` runs the commands in this document, in order, and checks each response
+against the status recorded here.
+
+```bash
+docker compose up -d --wait db
+swift run CompanyDirectory serve                 # in another terminal
+Scripts/playbook-replay.sh                       # -y skips the confirmation
+```
+
+It reads the commands out of this file rather than carrying its own copy, so there is no second
+sequence to keep in step. Every `$` line in a `console` block is replayed, and its expected status
+comes from either the `→ NNN` annotation on the command or the `HTTP/1.1 NNN` line beneath it. A
+command with neither is printed under *not replayable, so not checked* rather than silently
+dropped, which is what keeps an unannotated addition visible.
+
+**It truncates `employees` and `departments`.** That is the difference from `Scripts/smoke.sh`,
+which generates suffixed names and is safe against a populated database. This document records
+fixed ids, so reproducing it requires an empty database and restarted sequences. It prompts before
+doing so unless given `-y`, and refuses to run unprompted without `-y` when stdin is not a terminal.
+
+It checks statuses, not bodies. The ids and names in the responses above are still read by eye.
+
+The reason it exists is a defect found on 2026-08-17: neither entity section created its second
+record, because the duplicate `POST` that demonstrates the `409` creates nothing. Roughly half of
+each section addressed an id that did not exist and answered `404`. The captures were real output,
+but taken against a database that already held those records, and verifying each response in
+isolation cannot detect that the commands do not produce the state they assume. Replaying them in
+order from `TRUNCATE` does — removing that one `POST` again now fails five checks.
+
 ### When not to wire it into CI
 
 Not as a second job. CI already runs the suite against a service container, so a smoke test there
@@ -375,9 +412,7 @@ moved the failure into parameter parsing, so it now returns an incorrect status 
 ### Empty names are accepted (#12)
 
 ```console
-$ http POST :8080/api/departments name=
-HTTP/1.1 201 Created
-
+$ http POST :8080/api/departments name=                                → 201
 { "id" : 3, "name" : "" }
 ```
 
@@ -402,6 +437,51 @@ now describes the server that exists rather than one that does not. #24 is the f
 
 There is nothing to exercise. The section exists to record that the absence is intentional and
 tracked.
+
+## Clean up
+
+Two processes were started: the server and the database container.
+
+### The server
+
+In the terminal running it, **Ctrl-C**. Vapor traps `SIGINT` and shuts down through
+`asyncShutdown()`, closing the database connection pool rather than dropping it.
+
+If it was backgrounded with `&`, `kill %1` from the same shell is *not* enough. `swift run` compiles
+and then execs the binary as a **child process**, and the job is the parent. Terminating it leaves
+the server running and still holding the port:
+
+```console
+$ kill %1
+$ lsof -nP -iTCP:8080 -sTCP:LISTEN
+COMMAND     PID  USER   FD   TYPE  NAME
+CompanyDi 38948 glenn   16u  IPv4  TCP 127.0.0.1:8080 (LISTEN)
+
+$ http GET :8080/health                                                → 200
+```
+
+The next `swift run CompanyDirectory serve` then fails to bind, and the orphan answers requests as
+though nothing happened. Address the listener rather than the job:
+
+```bash
+lsof -ti tcp:8080 | xargs kill        # by the port it holds
+pkill -f 'CompanyDirectory serve'     # or by name — matches the swift run wrapper too
+```
+
+Both send `SIGTERM`, which Vapor handles the same way as Ctrl-C. Confirm with
+`lsof -ti tcp:8080`, which should print nothing.
+
+### The database
+
+```bash
+docker compose stop db     # keeps the data
+docker compose down        # removes the containers, keeps the volume
+docker compose down -v     # removes the volume as well — every row goes
+```
+
+Stopping is rarely worth it; an idle PostgreSQL container costs almost nothing, and leaving it up
+means the next session starts at `swift run`. Use `down -v` only to rebuild from nothing, remembering
+that `autoMigrate()` recreates the schema at startup but no data comes back.
 
 ## Cleaning up
 

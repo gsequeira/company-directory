@@ -140,6 +140,10 @@ The last row is the one worth resisting hardest, and it is the same argument as
 OS is the one machine allowed to be wrong, so **the answer is to build on a machine with a shipping
 SDK**, not to move the pin. Decided that way on 2026-08-16; the pin stayed at 6.3.3.
 
+**Resolved 2026-08-17** by returning that machine to the shipping macOS release. The pin never
+moved, and nothing in the project changed. Recorded because the failure recurs with every beta
+cycle, and the three rows above are what stops it being re-diagnosed each time.
+
 If a build is genuinely needed on such a machine, override locally and leave the file alone:
 
 ```bash
@@ -155,8 +159,8 @@ xcrun swift build --scratch-path /tmp/company-directory-xcode-build
 ```
 
 **CI cannot see any of this**, which is the point of running it in `swift:6.3.3` on Linux: no macOS
-SDK is involved, so the failure cannot reach it. See [`CI.md`](CI.md) → *What can go wrong* for the
-green-in-CI-red-locally reading of the same event.
+SDK is involved, so the failure cannot reach it. See [`CI.md`](CI.md) → *Green in CI, will not build
+on your Mac* for the same event read from the other side.
 
 ## The split reaches the bundled tools too
 

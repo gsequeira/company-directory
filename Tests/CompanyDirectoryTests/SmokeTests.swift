@@ -151,13 +151,26 @@ struct SmokeTests {
     func testEmployeePartialUpdate() async throws {
         let lastName = "\(runSuffix)-emp"
 
+        // An employee needs a department since #18, so this test now creates one and removes it
+        // at the end. Deleting the employee first is not tidiness — the foreign key is
+        // `ON DELETE RESTRICT`, so the department cannot go while the employee still points at it.
+        let departmentCreated = try await send(
+            "POST", "/api/departments",
+            json: try encode(
+                Components.Schemas.CreateDepartmentRequest(name: "\(runSuffix)-dept-emp"))
+        )
+        try #require(departmentCreated.status == 201)
+        let department = try decode(Components.Schemas.Department.self, from: departmentCreated.body)
+
         let created = try await send(
             "POST", "/api/employees",
             json: try encode(
-                Components.Schemas.CreateEmployeeRequest(firstName: "Ada", lastName: lastName))
+                Components.Schemas.CreateEmployeeRequest(
+                    departmentId: Int32(department.id), firstName: "Ada", lastName: lastName))
         )
         try #require(created.status == 201)
         let employee = try decode(Components.Schemas.Employee.self, from: created.body)
+        #expect(employee.departmentId == Int32(department.id))
 
         let patched = try await send(
             "PATCH", "/api/employees/\(employee.id)",
@@ -171,6 +184,9 @@ struct SmokeTests {
 
         let deleted = try await send("DELETE", "/api/employees/\(employee.id)")
         #expect(deleted.status == 204)
+
+        let departmentDeleted = try await send("DELETE", "/api/departments/\(department.id)")
+        #expect(departmentDeleted.status == 204)
     }
 
     @Test("Unknown ids are not found, with an empty body")

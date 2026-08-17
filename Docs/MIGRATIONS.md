@@ -398,6 +398,49 @@ table holds one row or a million.
 
 What genuinely differs at scale is locking, which is covered in *Not yet encountered* below.
 
+## Steps 2 and 3, and the one Fluent cannot express
+
+Landed 2026-08-17 with the rest of #18.
+
+**Step 2, `BackfillEmployeeDepartment`,** gives every department-less row a department, because
+step 3 cannot apply `NOT NULL` while any row holds null. It creates a department named
+`Unassigned` if one is not already there and points the orphans at it. Inventing a placeholder is a
+decision, not a formality: the alternative is refusing to migrate until a human assigns each row,
+which protects the data and is useless for a project whose migrations run unattended at startup.
+The placeholder is visible through the API rather than hidden, so the rows still needing attention
+can be found by asking for them.
+
+**Step 3, `RequireEmployeeDepartment`, is the first migration here that drops out of Fluent
+entirely.** `DatabaseSchema.FieldUpdate` has exactly two cases, `.dataType` and `.custom`, so the
+schema builder can change a column's type and cannot add a constraint to a column that already
+exists. `.field(...)` with `.required` emits `ADD COLUMN`, which fails because the column is there.
+
+```swift
+try await sql(database).raw(
+    "ALTER TABLE employees ALTER COLUMN department_id SET NOT NULL"
+).run()
+```
+
+`SQLKit` arrives through `FluentPostgresDriver`'s re-exports, so this costs no new dependency — it
+costs portability, which is why the cast to `SQLDatabase` throws rather than silently skipping.
+
+**Proved against populated data, which is the only place it means anything.** Every test reverts
+its migrations, so the suite runs this against an empty table where it cannot fail. The
+development database was seeded to look like a deployment that predates the column:
+
+```
+ id | first_name | department_id        →         id | first_name | department_id | name
+----+------------+---------------                ----+------------+---------------+-------------
+  1 | Ada        |             1                   1 | Ada        |             1 | Engineering
+  2 | Grace      |                                 2 | Grace      |             2 | Unassigned
+  3 | Alan       |                                 3 | Alan       |             2 | Unassigned
+```
+
+Ada kept the department she had; Grace and Alan were placed in the migration-created `Unassigned`;
+`attnotnull` on `department_id` then read `t`. Had the backfill been omitted, step 3 would have
+failed at startup with `column "department_id" contains null values` — on the development server,
+not in CI, which is exactly the blind spot this section exists to describe.
+
 # Not yet encountered
 
 Things this project has not had to deal with, listed so they are not a surprise later:

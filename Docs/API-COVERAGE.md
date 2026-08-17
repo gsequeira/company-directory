@@ -3,10 +3,10 @@
 A snapshot of how much of `Sources/CompanyDirectory/openapi.yaml` the suite in
 `Tests/CompanyDirectoryTests/APIHandlerTests.swift` actually exercises, and what it misses.
 
-**Assessed:** 2026-08-16, at commit `4c9f714`, with Phase 1 complete and 30 tests passing. This
-supersedes the original sweep of 2026-08-14, which was taken at 14 tests and before #9 added three
-operations. The declared-response tables below have been re-derived from the spec rather than
-edited.
+**Assessed:** 2026-08-17, after #18, with 43 tests passing. This supersedes the sweep of
+2026-08-16 at `4c9f714`, which was taken at 30 tests and before employees had a department. The
+declared-response table below is re-derived from the spec each time rather than edited — the count
+is checked against the spec, not carried forward.
 
 For exercising the API by hand rather than through the suite, see
 [`API-PLAYBOOK.md`](API-PLAYBOOK.md), which records real captured output for every operation and
@@ -18,7 +18,8 @@ This is a status document and goes out of date as tests are added — unlike
 trusting them.
 
 **Scope:** this audits how well the *existing* surface is tested. It does not assess whether that
-surface is the right one. The two entities are not yet related; that is Phase 2. See
+surface is the right one. The two entities are related as of #18; Phases 3 and 4 are still ahead.
+See
 [`API-DESIGN.md`](API-DESIGN.md) for the intended shape and the planned sequencing, which puts most
 of the work below *after* the design phases.
 
@@ -27,9 +28,9 @@ of the work below *after* the design phases.
 Every operation in the spec has at least one test, so there are no completely unexercised
 endpoints. Beneath that:
 
-- **20 of 20 declared responses are tested.** #11 deleted the two `401` declarations, which were the
-  only untestable ones. The spec now describes exactly the server that exists, and every response it
-  declares has a test behind it.
+- **23 of 23 declared responses are tested.** #18 added three — `422` on `createEmployee` and
+  `updateEmployee`, `409` on `deleteDepartment` — and each arrived with its test. #11 had already
+  deleted the two `401` declarations, which were the only untestable ones.
 - **Malformed input returns `500` on every endpoint**, an undeclared status that violates the
   contract everywhere. No test sends invalid input, which is why this went unnoticed.
 
@@ -53,11 +54,11 @@ endpoints. Beneath that:
 | `createDepartment` | 201, 409 | 201, 409 | — |
 | `getDepartmentDetail` | 200, 404 | 200, 404 | — |
 | `updateDepartment` | 200, 404, 409 | 200, 404, 409 | — |
-| `deleteDepartment` | 204, 404 | 204, 404 | — |
+| `deleteDepartment` | 204, 404, 409 | 204, 404, 409 | — |
 | `listEmployees` | 200 | 200 | — |
-| `createEmployee` | 201, 409 | 201, 409 | — |
+| `createEmployee` | 201, 409, 422 | 201, 409, 422 | — |
 | `getEmployeeDetail` | 200, 404 | 200, 404 | — |
-| `updateEmployee` | 200, 404, 409 | 200, 404, 409 | — |
+| `updateEmployee` | 200, 404, 409, 422 | 200, 404, 409, 422 | — |
 | `deleteEmployee` | 204, 404 | 204, 404 | — |
 
 ### `updateDepartment` was the weak spot — closed 2026-08-16

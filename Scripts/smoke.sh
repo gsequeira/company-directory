@@ -150,13 +150,23 @@ EMP_LAST="smoke-$RUN_ID"
 request GET "$API/employees"
 check "list employees" 200 "$STATUS"
 
-request POST "$API/employees" "firstName=Ada" "lastName=$EMP_LAST"
+request POST "$API/employees" "departmentId:=$DEPT_ID" "firstName=Ada" "lastName=$EMP_LAST"
 check "create employee" 201 "$STATUS"
 EMP_ID="$(json_field id)"
 [ -n "$EMP_ID" ] && CREATED_EMPLOYEES+=("$EMP_ID")
+check "created employee carries its department" "$DEPT_ID" "$(json_field departmentId)"
 
-request POST "$API/employees" "firstName=Ada" "lastName=$EMP_LAST"
+request POST "$API/employees" "departmentId:=$DEPT_ID" "firstName=Ada" "lastName=$EMP_LAST"
 check "duplicate employee conflicts" 409 "$STATUS"
+
+# `:=` rather than `=` is required: HTTPie sends `key=value` as a JSON string, and departmentId
+# is an integer. Sent as "1" it fails decoding and returns 500, which would read here as an
+# unrelated defect rather than a malformed request.
+request POST "$API/employees" "departmentId:=999999" "firstName=Ada" "lastName=$EMP_LAST-orphan"
+check "employee referencing an unknown department is rejected" 422 "$STATUS"
+
+request DELETE "$API/departments/$DEPT_ID"
+check "department with employees cannot be deleted" 409 "$STATUS"
 
 request GET "$API/employees/$EMP_ID"
 check "read employee" 200 "$STATUS"

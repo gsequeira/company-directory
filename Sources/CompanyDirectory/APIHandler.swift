@@ -61,15 +61,15 @@ struct APIHandler: APIProtocol {
 
             do {
                 try await newDepartment.save(on: database)
-            } catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+            } catch let error where ConstraintViolation(error) == .unique {
                 // The pre-check lost the race: another request inserted this name between the
                 // query above and this save, and the unique index rejected the second insert.
                 // Without this, the loser of that race gets a 500 for a plain conflict.
                 //
-                // `isConstraintFailure` covers every constraint type, which is precise enough
-                // only because uniqueness is currently the sole constraint on this table. The
-                // Phase 2 foreign key will break that assumption — see the note in
-                // Docs/MIGRATIONS.md.
+                // Narrowed from `isConstraintFailure` by #21: that covered every constraint type,
+                // which stopped being precise the moment the schema held more than one kind. Any
+                // other constraint failure now propagates as a 500, which is the honest answer
+                // for a violation this handler did not anticipate.
                 return .conflict(
                     .init(
                         body: .json(
@@ -146,9 +146,9 @@ struct APIHandler: APIProtocol {
 
             do {
                 try await existingDepartment.save(on: database)
-            } catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+            } catch let error where ConstraintViolation(error) == .unique {
                 // Same race as createDepartment, reached by renaming onto a name another
-                // request took in the meantime.
+                // request took in the meantime. Narrowed by #21, as above.
                 return .conflict(
                     .init(
                         body: .json(
@@ -171,9 +171,15 @@ struct APIHandler: APIProtocol {
     ///
     /// - `204` — deleted, no body.
     /// - `404` — no department has that id.
+    /// - `409` — employees are still assigned to it, and the reason says how many.
     ///
-    /// What happens to a department's employees is undecided until Phase 2 gives them a
-    /// relationship (#19).
+    /// The `409` implements the decision in `Docs/API-DESIGN.md` §2.4: deleting a department that
+    /// still has employees is refused rather than cascading or nulling. It is enforced twice, and
+    /// both halves are load-bearing. The count below is what produces a useful message; the
+    /// `onDelete: .restrict` on the foreign key is what makes that count safe to be wrong, since
+    /// a department emptied and refilled between the count and the delete is still refused by the
+    /// database. Neither alone is sufficient: the constraint cannot explain itself, and the
+    /// pre-check cannot be atomic.
     func deleteDepartment(_ input: Operations.DeleteDepartment.Input) async throws -> Operations.DeleteDepartment.Output
     {
         let departmentId = input.path.departmentId
@@ -182,7 +188,36 @@ struct APIHandler: APIProtocol {
             return .notFound(.init())
         }
 
-        try await existingDepartment.delete(on: database)
+        let employeeCount = try await existingDepartment.$employees.query(on: database).count()
+
+        if employeeCount > 0 {
+            let conflictResponse = Components.Schemas.ConflictError(
+                error: true,
+                reason:
+                    "Department '\(existingDepartment.name)' still has \(employeeCount) "
+                    + "employee\(employeeCount == 1 ? "" : "s") assigned to it"
+            )
+
+            return .conflict(.init(body: .json(conflictResponse)))
+        }
+
+        do {
+            try await existingDepartment.delete(on: database)
+        } catch let error where ConstraintViolation(error) == .foreignKey {
+            // The pre-check lost the race: an employee was assigned to this department between
+            // the count above and the delete. The count is no longer trustworthy here, so the
+            // message does not quote one.
+            return .conflict(
+                .init(
+                    body: .json(
+                        Components.Schemas.ConflictError(
+                            error: true,
+                            reason: "Department '\(existingDepartment.name)' still has employees assigned to it"
+                        )
+                    )
+                )
+            )
+        }
 
         return .noContent(.init())
     }
@@ -225,13 +260,30 @@ struct APIHandler: APIProtocol {
                 return .conflict(.init(body: .json(conflictResponse)))
             }
 
+            // The department must exist before the employee can reference it. Checking here
+            // rather than letting the foreign key reject the insert is what turns an opaque
+            // constraint failure into a response naming the department that is missing.
+            guard try await Models.Department.find(createRequest.departmentId, on: database) != nil else {
+                return .unprocessableContent(
+                    .init(
+                        body: .json(
+                            Components.Schemas.ReferenceError(
+                                error: true,
+                                reason: "No department exists with id \(createRequest.departmentId)"
+                            )
+                        )
+                    )
+                )
+            }
+
             let newEmployee = Models.Employee()
             newEmployee.firstName = createRequest.firstName
             newEmployee.lastName = createRequest.lastName
+            newEmployee.$department.id = createRequest.departmentId
 
             do {
                 try await newEmployee.save(on: database)
-            } catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+            } catch let error where ConstraintViolation(error) == .unique {
                 // See createDepartment: the pre-check races, and the unique constraint added
                 // by Migrations.AddEmployeeNameUniqueness is what catches the loser.
                 return .conflict(
@@ -241,6 +293,20 @@ struct APIHandler: APIProtocol {
                                 error: true,
                                 reason:
                                     "An employee named '\(createRequest.firstName) \(createRequest.lastName)' already exists"
+                            )
+                        )
+                    )
+                )
+            } catch let error where ConstraintViolation(error) == .foreignKey {
+                // The department check above lost its race: the department was deleted between
+                // that lookup and this insert. Before #21 this fell into the branch above and
+                // reported a duplicate name that did not exist.
+                return .unprocessableContent(
+                    .init(
+                        body: .json(
+                            Components.Schemas.ReferenceError(
+                                error: true,
+                                reason: "No department exists with id \(createRequest.departmentId)"
                             )
                         )
                     )
@@ -277,8 +343,10 @@ struct APIHandler: APIProtocol {
     /// - `200` — the updated employee. A body of `{}` changes nothing and returns it unchanged.
     /// - `404` — no employee has that id.
     /// - `409` — another employee already has the resulting first and last name.
+    /// - `422` — the supplied `departmentId` does not exist.
     ///
-    /// Both fields are optional; omitted ones are left unchanged. See `Docs/API-DESIGN.md` §1.3.
+    /// Every field is optional; omitted ones are left unchanged. See `Docs/API-DESIGN.md` §1.3.
+    /// Supplying `departmentId` moves the employee to another department.
     func updateEmployee(_ input: Operations.UpdateEmployee.Input) async throws -> Operations.UpdateEmployee.Output {
         let employeeId = input.path.employeeId
 
@@ -309,12 +377,33 @@ struct APIHandler: APIProtocol {
                 return .conflict(.init(body: .json(conflictResponse)))
             }
 
+            // Only checked when supplied. Omitting `departmentId` leaves the employee where it
+            // is, which is the same partial-update rule the names follow — and because the
+            // column is `NOT NULL`, there is no way to express "remove the department" and no
+            // tri-state to disambiguate. See `Docs/API-DESIGN.md` §2.5.
+            if let newDepartmentId = updateRequest.departmentId {
+                guard try await Models.Department.find(newDepartmentId, on: database) != nil else {
+                    return .unprocessableContent(
+                        .init(
+                            body: .json(
+                                Components.Schemas.ReferenceError(
+                                    error: true,
+                                    reason: "No department exists with id \(newDepartmentId)"
+                                )
+                            )
+                        )
+                    )
+                }
+
+                existingEmployee.$department.id = newDepartmentId
+            }
+
             existingEmployee.firstName = newFirstName
             existingEmployee.lastName = newLastName
 
             do {
                 try await existingEmployee.save(on: database)
-            } catch let error as any FluentKit.DatabaseError where error.isConstraintFailure {
+            } catch let error where ConstraintViolation(error) == .unique {
                 // The pre-check lost the race: another request took this name in between.
                 return .conflict(
                     .init(
@@ -322,6 +411,21 @@ struct APIHandler: APIProtocol {
                             Components.Schemas.ConflictError(
                                 error: true,
                                 reason: "An employee named '\(newFirstName) \(newLastName)' already exists"
+                            )
+                        )
+                    )
+                )
+            } catch let error where ConstraintViolation(error) == .foreignKey {
+                // The department was deleted between the check above and this save. Reported as
+                // the reference failure it is rather than as a duplicate name (#21).
+                return .unprocessableContent(
+                    .init(
+                        body: .json(
+                            Components.Schemas.ReferenceError(
+                                error: true,
+                                reason:
+                                    "No department exists with id "
+                                    + "\(updateRequest.departmentId ?? existingEmployee.$department.id)"
                             )
                         )
                     )

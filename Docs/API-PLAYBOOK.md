@@ -69,7 +69,7 @@ as well — see [`API-COVERAGE.md`](API-COVERAGE.md).
 
 ```bash
 docker compose up -d --wait db     # the development database, not db-test
-swift run CompanyDirectory serve             # http://127.0.0.1:8080
+swift run company-directory serve             # http://127.0.0.1:8080
 ```
 
 `autoMigrate()` runs at startup, so the schema is created or brought up to date before the first
@@ -307,7 +307,7 @@ server** — it drives one over a real socket rather than starting anything itse
 docker compose up -d --wait db
 
 # 2. the server, in another terminal (or append & to background it)
-swift run CompanyDirectory serve
+swift run company-directory serve
 
 # 3. the checks
 Scripts/smoke.sh
@@ -360,7 +360,7 @@ confirming no `smoke-` rows survive, on both the passing and the failing paths.
 
 ```bash
 docker compose up -d --wait db                    # the server needs it
-swift run CompanyDirectory serve &                          # backgrounded so the next line can run
+swift run company-directory serve &                          # backgrounded so the next line can run
 SMOKE_BASE_URL=http://127.0.0.1:8080 swift test --filter SmokeTests
 kill %1                                           # stop the server afterwards
 ```
@@ -392,7 +392,7 @@ against the status recorded here.
 
 ```bash
 docker compose up -d --wait db
-swift run CompanyDirectory serve                 # in another terminal
+swift run company-directory serve                 # in another terminal
 Scripts/playbook-replay.sh                       # -y skips the confirmation
 ```
 
@@ -509,12 +509,12 @@ CompanyDi 38948 glenn   16u  IPv4  TCP 127.0.0.1:8080 (LISTEN)
 $ http GET :8080/health                                                → 200
 ```
 
-The next `swift run CompanyDirectory serve` then fails to bind, and the orphan answers requests as
+The next `swift run company-directory serve` then fails to bind, and the orphan answers requests as
 though nothing happened. Address the listener rather than the job:
 
 ```bash
 lsof -ti tcp:8080 | xargs kill        # by the port it holds
-pkill -f 'CompanyDirectory serve'     # or by name — matches the swift run wrapper too
+pkill -f 'company-directory serve'    # or by name — matches the swift run wrapper too
 ```
 
 Both send `SIGTERM`, which Vapor handles the same way as Ctrl-C. Confirm with

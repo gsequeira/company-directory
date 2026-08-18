@@ -19,7 +19,7 @@ reads the pin). [HTTPie](https://httpie.io) is needed only for the playbook and 
 git clone https://github.com/sequeiralabs/company-directory.git
 cd company-directory
 docker compose up -d --wait db        # PostgreSQL; migrations run at startup
-swift run CompanyDirectory serve      # http://127.0.0.1:8080
+swift run company-directory serve     # http://127.0.0.1:8080
 ```
 
 No `.env` is needed — the compiled defaults match `docker-compose.yml`. Then, in another terminal:

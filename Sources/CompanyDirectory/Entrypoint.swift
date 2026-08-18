@@ -4,7 +4,7 @@ import Vapor
 @main
 struct Entrypoint {
     static func main() async throws {
-        let logger = Logger(label: "com.sequeiralabs.companydirectory")
+        let logger = Logger(label: "com.sequeiralabs.company-directory")
 
         let application = try await Application.make(logger: logger)
 

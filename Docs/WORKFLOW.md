@@ -130,6 +130,38 @@ Reference the issue in the body — `Part of #18` — and let the final pull req
 finishes it, with a closing keyword. The linkage is worth having when one branch completes an issue,
 and is actively wrong when it does not.
 
+## A renamed binary breaks `pkill` silently
+
+Renaming the executable in #63 moved four documented commands that match on a *process name* rather
+than a path:
+
+```bash
+pkill -f 'CompanyDirectory serve'          # API-PLAYBOOK.md
+pkill -f '.build/debug/CompanyDirectory'   # API-COVERAGE.md
+```
+
+`pkill` exits `1` when nothing matched, but these appear as cleanup steps at the end of a block whose
+status is never read. A stale pattern therefore kills nothing, reports nothing, and leaves an orphan
+server holding port 8080 — which is the exact failure the playbook's *Clean up* section exists to
+prevent. The same applies to `pgrep`, `lsof -c`, `docker ps --filter name=`, and any log query
+filtering on a logger label.
+
+The check is to run the pattern rather than to read it:
+
+```console
+$ pgrep -fl 'company-directory serve'
+41172 /Users/glenn/.swiftly/bin/swift run company-directory serve
+41176 .build/arm64-apple-macosx/debug/company-directory serve
+```
+
+Two matches, because `swift run` execs the binary as a child and both survive in the process table —
+which is what makes the pattern worth having over `kill %1`.
+
+One local wrinkle after a rename: `.build/debug/` keeps the previously-linked binary under the old
+name until the next clean build, so `.build/debug/CompanyDirectory` still runs and still works. A
+fresh clone has only the new name, so a documentation reference verified against a warm `.build` can
+pass locally and fail for everyone else.
+
 ### A second mechanism: prose in a commit message
 
 The commit recording the incident above contained the sentence *"Merging it closed #18 anyway"*.

@@ -396,10 +396,11 @@ exercises are doing work at once.
 
 Ordered by value per minute invested.
 
-**Continuous integration.** There are 14 passing tests and nothing running them on push. A GitHub
-Actions workflow calling `swift build && swift test` is perhaps twenty lines and is the single
-highest-return item on this page. Add `swift format lint --strict` once the config exists — see the
-notes on that in the project's deferred work.
+**Continuous integration.** Done, and it was the single highest-return item on this page. A GitHub
+Actions workflow calling `swift build && swift test` landed in #1 and now runs 43 tests on every
+push; `swift format lint --strict` was added with the `.swift-format` config in #6 and runs first,
+because it takes under a second and needs no database. [`CI.md`](CI.md) is the write-up. What
+remains is turning the report into a gate — branch protection, #28.
 
 **Error handling as a subsystem.** The `500`-on-malformed-input defect recorded in
 [`API-COVERAGE.md`](API-COVERAGE.md) is the symptom of not having one. One middleware that maps

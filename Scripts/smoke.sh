@@ -16,7 +16,7 @@
 # Requires a running server. This script drives one; it does not start anything.
 #
 #   docker compose up -d --wait db      # the development database
-#   swift run CompanyDirectory serve              # in another terminal
+#   swift run company-directory serve   # in another terminal
 #   Scripts/smoke.sh                    # then this
 #
 # Usage:
@@ -112,7 +112,7 @@ check "server is reachable and /health answers" 200 "$STATUS"
 if [ "$STATUS" != "200" ]; then
     echo
     echo "smoke: the server is not answering; the remaining checks would only repeat this."
-    echo "smoke: start it with 'swift run CompanyDirectory serve' and try again."
+    echo "smoke: start it with 'swift run company-directory serve' and try again."
     exit 1
 fi
 

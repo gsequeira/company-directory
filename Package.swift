@@ -5,6 +5,10 @@ import PackageDescription
 let package = Package(
     name: "CompanyDirectory",
     platforms: [.macOS(.v26)],
+    products: [
+        // The module keeps its PascalCase Swift name; the command it produces is kebab-case.
+        .executable(name: "company-directory", targets: ["CompanyDirectory"])
+    ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.121.4"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.11.0"),

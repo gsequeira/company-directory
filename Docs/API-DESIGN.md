@@ -29,8 +29,13 @@ contain.
 | Delete | `DELETE /departments/{departmentId}` | `DELETE /employees/{employeeId}` |
 
 **Both entities have full CRUD as of 2026-08-16 (#9).** `PATCH` is a partial update on both — see
-§1.3. The two entities remain unrelated: `Models.Employee` has no `@Parent`, the `employees` table
-has no `department_id`, and the `Employee` schema has no `departmentId`. That is Phase 2.
+§1.3.
+
+**They are related as of 2026-08-17 (#18).** `Models.Employee` has a non-optional `@Parent`, the
+`employees` table has a required `department_id` with `onDelete: .restrict`, and the `Employee`
+schema carries `departmentId`. Phase 2 is complete; §2.1 records where the implementation departed
+from the sketch. Phase 3 adds the transfer operation and Phase 4 employment status — neither is
+built yet, and the Phase 4 decisions are recorded in §4.2 through §4.6.
 
 ---
 
@@ -452,6 +457,230 @@ paths and how `.with(\.$employees)` eager loading works.
 
 ---
 
+# Phase 3 — the transfer operation
+
+`POST /departments/{departmentId}/transfer` moves every employee in one department to another and
+optionally deletes the source. It is the first operation here that is not CRUD and the first that
+needs a transaction: two writes that must both land, or neither.
+
+**The decisions are open on #65** — the response shape, whether `deleteSourceAfterTransfer` belongs
+on the operation at all, `409` versus `422` for a same-department request, and what idempotency
+means for it. They are not recorded here because they are not made. The implementation is #66.
+
+[`LEARNING-PATH.md`](LEARNING-PATH.md) → *Phase 3 — the operation that forces a transaction* holds
+the reasoning and the spec sketch.
+
+---
+
+# Phase 4 — employment status
+
+## 4.1 The shape
+
+`Employee` gains a status with a fixed transition graph:
+
+```
+invited → active → onLeave → active → departed
+```
+
+`departed` is terminal. Transitions are named endpoints rather than a field on `PATCH`:
+
+```
+POST /employees/{employeeId}/activate
+POST /employees/{employeeId}/start-leave
+POST /employees/{employeeId}/depart
+```
+
+An illegal transition returns `409` — a conflict with the resource's current state, which is what
+`409` means. `400` would be wrong: the request is well-formed, and it is the state that is
+incompatible.
+
+Three properties make this different from the CRUD in Phases 1 and 2, and each one is a reason the
+field cannot simply be added to `UpdateEmployeeRequest`:
+
+| Property | Consequence |
+| --- | --- |
+| Not every change is legal | A `PATCH` accepts what it is given, so the rules would live in every client |
+| Transitions carry their own data | Departing has a leaving date and a reason; returning from leave has neither |
+| Transitions have side effects | Those belong to the transition, not to a field assignment |
+
+The rules live on the generated enum rather than across three handlers:
+
+```swift
+extension Components.Schemas.EmploymentStatus {
+    func canTransition(to next: Self) -> Bool { … }
+}
+```
+
+Note that `409` is already this API's duplicate-name code. [`ISSUE-LOG.md`](ISSUE-LOG.md) records
+two occasions — under #13 and #9 — where a test asserting only on `409` could not tell which code
+path produced it, and where the pre-check turned out to be deletable with the suite still green.
+Transition tests assert on the response body as well as the status.
+
+## 4.2 Decision — the backfill value and the column default
+
+## Decided 2026-08-18 — backfill `active`, default `invited`, and the state set is final
+
+The four states are settled: `invited`, `active`, `onLeave`, `departed`. No `suspended`, no
+`contractor`. That is what makes §4.5 available.
+
+Existing rows backfill to `active`. Everyone already in the table is current staff, `invited` would
+misrepresent them as not yet onboarded, and there is no data from which to reconstruct who was ever
+invited. New rows default to `invited`.
+
+The backfill value and the column default therefore differ, deliberately. The default describes how
+a record starts from now on; the backfill describes rows that predate the concept and could never
+have started that way.
+
+Mechanically this is #18's shape — add the column with a default, backfill, then apply `NOT NULL` in
+a second migration, because Fluent cannot express "add non-null with a default" in one step. See
+[`MIGRATIONS.md`](MIGRATIONS.md) → *Steps 2 and 3*.
+
+**What "settled" costs.** With the native enum of §4.5, a state added in error is permanent short of
+creating a new type, altering the column and dropping the old one. Accepted, because adding a state
+also requires rewriting `canTransition(to:)`, a new endpoint, an extended transition matrix and a
+migration. The schema was never the binding constraint.
+
+## 4.3 Decision — does departing unassign the employee from their department
+
+## Decided 2026-08-18 — it does not; §2.5 stands unchanged
+
+`depart` changes status and nothing else about the relationship. `departmentId` stays required and
+non-null, the `@Parent` stays non-optional, and no migration touches the column. Status and
+assignment are orthogonal: one records whether someone works here, the other where they worked.
+
+Making `departmentId` nullable was rejected. It would reverse §2.5, reintroduce the absent-versus-null
+cost §1.3 deferred, and destroy the record of which department someone departed from.
+
+### The follow-on that looks right and is not
+
+Filtering departed employees out of `deleteDepartment`'s pre-check, so a department empties as its
+staff leave, breaks — because the pre-check and the database would disagree. The foreign key is
+`onDelete: .restrict` (`Migrations.swift:93`), so PostgreSQL refuses the delete while *any* row
+references the department. The pre-check would pass, the `DELETE` would fail, and the request would
+land in the race-path `catch` at `APIHandler.swift:206`, returning a `409` that deliberately quotes
+no count. The caller would see a conflict on a department the API had just implied was empty.
+
+Making that filter honest would require changing the foreign key, and the only options are
+`SET NULL` — the nullable route, already rejected — or `CASCADE`, which deletes people because their
+department closed.
+
+**So `deleteDepartment` is unchanged: all employees count, departed included.** A department cannot
+be hard-deleted while anyone who ever worked there still exists as a row. That is the correct
+restriction; the alternative is losing history to a `DELETE`. #66's transfer operation is the
+intended path — move everyone to the receiving department, then delete the source. Its fidelity cost
+is accepted: transferring a departed employee rewrites where they are recorded as having departed
+from.
+
+Archiving a department rather than deleting it, and modelling employment as a history of assignments
+rather than one current assignment, are the proper answers to that restriction. Both are larger than
+Phase 4 and are deliberately not folded in here.
+
+## 4.4 Decision — can a departed employee still be edited
+
+## Decided 2026-08-18 — yes, fully; only `status` is off-limits to `PATCH`
+
+`PATCH /employees/{employeeId}` behaves identically whatever the employee's status. No new `409`, no
+per-field rule, no handler code. The one new restriction is that `status` is not a member of
+`UpdateEmployeeRequest` at all, for any employee.
+
+Immutability is not available rather than merely unattractive. §4.3 makes #66's transfer the escape
+hatch for deleting a department, and departed employees still hold a `departmentId` that blocks the
+delete — so transfer has to be able to move them. A rule that froze `PATCH` but not transfer would
+be worse than no rule.
+
+Per-field mutability — names correctable, department frozen — is rejected because
+`openapi.yaml` cannot express it. OpenAPI has no way to say a field is writable only in some
+resource states, so the rule would live in handler code, be invisible to every generated client, and
+surface only as a runtime `409`. That is the objection that removed the undeclarable `401`s in #11
+and that chose `422` over `404` in §2.1. It is also arbitrary: correcting a mis-recorded department
+is no less legitimate than correcting a misspelled name.
+
+What enforces terminality is the transition graph — `canTransition(to:)` and the three endpoints
+returning `409` — not `PATCH`. `status` appears in `Employee` responses and is absent from
+`UpdateEmployeeRequest` deliberately; that asymmetry is worth a comment in `openapi.yaml` so it does
+not read as an oversight.
+
+Audit trails, and protecting a leaving date from later correction, are out of scope.
+
+## 4.5 Decision — storage form for a closed value set
+
+## Decided 2026-08-18 — native enum for `EmploymentStatus`, `CHECK` for anything that is opinion
+
+The criterion, which matters more than either answer: **is the value set defined by the domain, or
+by current opinion?**
+
+A native PostgreSQL enum cannot have a value removed. Verified against PostgreSQL 18:
+
+```
+ALTER TYPE salutation DROP VALUE 'Miss';
+ERROR:  dropping an enum value is not implemented
+```
+
+A `varchar` with a `CHECK` refuses for a better reason — live rows still hold the value — and
+succeeds once the data is corrected. That immovability is only a cost when the set is opinion.
+
+`EmploymentStatus` takes a **native enum**. A state machine's value set is the machine; §4.2 settles
+it, and adding a state was never going to be a schema-only change. Sort order is the second reason:
+
+| | Order |
+| --- | --- |
+| Native enum | `invited < active < onLeave < departed` (declaration order) |
+| `varchar` | `active < departed < invited < onLeave` (alphabetical) |
+
+`ORDER BY status` becoming meaningful matters for #22 and #23; the alternative is a `CASE` expression
+in every query or a separate sort-key column.
+
+A field like `salutation` takes a `CHECK`, and should be nullable. Its set is opinion and already
+contested — `Mr | Mrs | Miss` omits `Ms`, encodes marital status for women and not for men, and has
+no room for `Dr` or `Prof`. A set still under discussion should not be stored in a form that cannot
+be narrowed.
+
+### What the native-enum path costs, all verified
+
+- **Revert has an order of its own.** `DROP TYPE` fails while a column uses it — *"cannot drop type
+  employment_status because other objects depend on it"*. Drop the column, then the type. This is the
+  first migration here whose `revert()` has ordering constraints, and it is worth a worked example
+  in [`MIGRATIONS.md`](MIGRATIONS.md).
+- **A new value cannot be used in the transaction that added it** — *"New enum values must be
+  committed before they can be used"*. Harmless today, because FluentKit's `Migration/` directory
+  contains no use of `transaction` and migrations autocommit statement by statement. It becomes a
+  live tripwire if migrations are ever made transactional.
+- **`.deleteCase()` is a silent no-op.** `FluentPostgresDriver`'s `execute(enum:)` logs *"PostgreSQL
+  does not support deleting enum cases"* at `.debug` and proceeds with only the additions, so the
+  migration reports success and changes nothing. Cited without a line number deliberately: it is
+  dependency source, and the line moves between releases.
+- **A bad value arrives as SQLSTATE `22P02`**, a data exception, not class 23. It falls outside
+  `ConstraintViolation.swift`, which models integrity-constraint violations; a `CHECK` failure is
+  `23514` and lands in the family that file already covers.
+
+In this application the generated enum rejects an invalid value during decoding, before any SQL runs.
+The database constraint is a backstop for writers that bypass the API — `psql`, migrations, a future
+service — not the primary guard.
+
+## 4.6 Decision — `status` in responses, and filtering
+
+## Decided 2026-08-18 — in responses from day one and required; no implicit filter, ever
+
+`status` is a member of `Employee` from the first migration, declared `required` rather than
+optional: the column is non-null once the backfill completes, and an optional field that is never
+absent teaches every client to handle a case the server cannot produce. The three transition
+endpoints also have no observable effect without it.
+
+`GET /api/employees` returns every employee, departed included. Filtering belongs to #23, where
+`status` is the obvious first argument.
+
+Hiding departed employees by default is rejected permanently rather than deferred, because it
+contradicts §4.3 observably. `deleteDepartment` counts every employee, so its `409` reads *"still
+has 3 employees assigned to it"* while a list that silently omitted the departed one would show two
+— two different counts for the same department, with nothing in the spec explaining why. A default
+filter is also undeclarable: OpenAPI can describe a `status` parameter and its default, but not "this
+collection silently omits some members".
+
+The accepted consequence is that employee lists grow monotonically. That is an argument for #22 and
+#23 mattering sooner, not for hiding rows.
+
+---
+
 # Deferred, and deliberately so
 
 **Pagination.** Both list endpoints return every row. The response schemas are named
@@ -476,9 +705,18 @@ new employee operations, so the gap is not reproduced.
 
 # Sequencing
 
-1. **Phase 1** — employee CRUD, plus the uniqueness and `PATCH` decisions.
+1. **Phase 1** — employee CRUD, plus the uniqueness and `PATCH` decisions. Complete 2026-08-16.
 2. **Phase 2** — the relationship, plus the delete-semantics and required-department decisions.
-3. **Then** the work in [`API-COVERAGE.md`](API-COVERAGE.md).
+   Complete 2026-08-17.
+3. **Phase 3** — the transfer operation, and the transaction it forces. Decisions open on #65,
+   implementation #66.
+4. **Phase 4** — employment status, and the state machine it forces. Decisions closed (§4.2–§4.6),
+   implementation #68, then #69 for the concurrency-safe transition.
+5. **Then** the work in [`API-COVERAGE.md`](API-COVERAGE.md).
+
+Phase 3 before Phase 4 is deliberate. The transaction is mechanically simpler and its failure is
+easier to construct, and the state machine's concurrency problem in #69 cannot be approached without
+the tool the transfer exercise provides.
 
 Coverage work last is deliberate. Writing `updateDepartment` tests now means writing near-identical
 `updateEmployee` tests immediately afterwards, and Phase 2 changes the `Employee` schema — which

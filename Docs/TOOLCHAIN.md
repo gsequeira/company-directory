@@ -88,8 +88,8 @@ swift test
 ```
 
 Own branch, own commit, nothing else in the diff. A change that touches every compiled artifact
-should never share a commit with a change that means something — the same rule applied to the
-deferred `swift-format --in-place` run.
+should never share a commit with a change that means something — the same rule that governed the
+`swift-format --in-place` run in #6.
 
 ### What can actually go wrong
 

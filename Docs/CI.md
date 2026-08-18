@@ -333,9 +333,11 @@ Nothing here handles secrets yet, and that is worth preserving deliberately.
 | Item | Why | Status |
 | --- | --- | --- |
 | Branch protection requiring the check | Turns a report into a gate. The single highest-value follow-up | Issue #28 — blocked on the plan, not on effort |
-| `.build` caching keyed on toolchain version | 682s of every run is cold compile | Not filed |
-| `swift format lint --strict` step | The image already ships swift-format 6.3.3 | Waiting on #6 |
-| `--warnings-as-errors` | Would currently fail on the unused-result warning in `TestHelpers.swift:47` | Blocked on that fix |
+| `.build` caching keyed on toolchain version | 682s of every run is cold compile | Issue #30 |
+| `--warnings-as-errors` | Would currently fail on the unused-result warning in `TestHelpers.swift:47` | Issue #37 |
+
+The `swift format lint --strict` step landed with #6 and runs before the tests — see *Part 3 —
+Anatomy of the workflow*. The image already ships swift-format 6.3.3, so it needs no install.
 
 **A build matrix is deliberately absent.** Testing several Swift versions or several PostgreSQL
 versions multiplies minutes by the size of the matrix, and this project pins exactly one of each on

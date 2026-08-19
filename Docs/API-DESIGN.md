@@ -527,6 +527,12 @@ global, so the coupling is visible in the signatures rather than hidden. A test-
 production code is a real cost, accepted because the alternative is a transaction whose only
 guarantee is that somebody read the code carefully.
 
+The seam also costs a connection. The hook commits from outside the transaction while the transaction
+is open, so the suite runs on `maxConnectionsPerEventLoop: 2` where production runs on the default of
+1. That was found by CI rather than by thinking: the test passed locally and deadlocked on the
+two-core runner. [`LEARNING-PATH.md`](LEARNING-PATH.md) → *Phase 3, the operation that forces a
+transaction* has the measurement.
+
 ## 3.2 Decision, does `deleteSourceAfterTransfer` belong on the operation
 
 One endpoint doing two things, with a flag deciding which, is usually two endpoints. The alternative

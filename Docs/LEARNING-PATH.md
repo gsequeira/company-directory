@@ -285,11 +285,25 @@ Server error - cause description: 'User handler threw an error.',
 underlying error: connectionRequestTimeout, operationID: transferEmployees
 ```
 
-So the mistake presents as a hang followed by a `500`, not as quietly wrong data. It only becomes
-silent on a pool with room for a second connection, which is the configuration most write-ups
-assume.
+So against the production configuration the mistake presents as a hang followed by a `500`, not as
+quietly wrong data. It only becomes silent on a pool with room for a second connection, which is the
+configuration most write-ups assume.
 
-Both failure modes are caught by the same test, and neither is caught by a happy path.
+### Which is why the suite runs on a pool of two
+
+`TestHelpers` sets `maxConnectionsPerEventLoop: 2`, and that is deliberate rather than incidental.
+The rollback test's hook has to commit a row from outside the transaction while the transaction is
+open, so it needs a second connection. On one connection the hook waits for the one the transaction
+is holding and the request times out.
+
+That was not found by reasoning about it. The test passed locally, where the hook happened to land on
+a different event loop, and deadlocked on CI's two-core runner. A test that depends on how many cores
+the machine has is not a test.
+
+The raised pool has a second effect worth stating plainly: it puts the suite in the configuration
+where the mistake **is** silent, so the rollback test catches it by asserting on the data rather than
+by timing out. That assertion is the one worth having, because it still holds on the day the pool
+size changes again.
 
 ### Testing the rollback, which is the actual exercise
 

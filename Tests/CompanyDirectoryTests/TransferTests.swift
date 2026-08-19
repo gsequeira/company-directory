@@ -153,8 +153,11 @@ extension APIHandlerIntegrationTests {
     ///
     /// The happy path above passes whether or not the two writes share a transaction, because
     /// writing `query(on: database)` inside the closure instead of `query(on: db)` produces a
-    /// transaction wrapping nothing and no error of any kind. Only a failure between the two
-    /// writes tells them apart.
+    /// transaction wrapping nothing. Only a failure between the two writes tells them apart.
+    ///
+    /// Verified by making that substitution: the two employees end up in the target, the delete
+    /// fails, and nothing rolls back. Restoring `db` makes this pass again. It is the only test
+    /// here that can tell the two spellings apart.
     ///
     /// `beforeSourceDelete` supplies that failure without simulating one: it assigns an employee
     /// to the source department on a different connection and commits, which is exactly the race

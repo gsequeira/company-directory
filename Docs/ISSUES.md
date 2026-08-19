@@ -1,12 +1,12 @@
 # Known issues in the test suite
 
-Defects found in `Tests/CompanyDirectoryTests/APIHandlerTests.swift`, with their fixes. All issues recorded
-here are resolved; the file is kept as a record of what went wrong and why the guards against
+Defects found in `Tests/CompanyDirectoryTests/APIHandlerTests.swift`, with their fixes. Everything
+recorded here is resolved. The file stays as a record of what went wrong and why the guards against
 recurrence look the way they do. See [`TESTING.md`](TESTING.md) for the conventions these fixes
 follow.
 
-Scope note: this covers defects in the test suite itself. It is not a project-wide issue list. For
-gaps in what the suite covers — including a live defect where malformed input returns `500` — see
+This covers defects in the test suite itself, not the project as a whole. For gaps in what the suite
+covers, including the live defect where malformed input returns `500`, see
 [`API-COVERAGE.md`](API-COVERAGE.md).
 
 **The numbering here is local to this file and predates the move to GitHub Issues.** "Issue 1" and
@@ -20,7 +20,7 @@ issues and what has been resolved, see [`ISSUE-LOG.md`](ISSUE-LOG.md).
 
 ---
 
-## Issue 1 — Conflict assertion checked wording the handler never produced
+## Issue 1, conflict assertion checked wording the handler never produced
 
 **Status:** resolved.
 
@@ -46,10 +46,10 @@ Expectation failed: (conflictError.reason → "An employee named 'Jane Doe' alre
   .contains("Duplicate names")
 ```
 
-The three assertions before it all passed — status `409`, JSON content type, `error == true` — so
-duplicate detection itself was working. Only the wording assertion failed. The test appears to have
-been written against a planned message before the handler settled on phrasing consistent with the
-department handlers.
+The three assertions before it all passed, meaning status `409`, JSON content type and
+`error == true`, so duplicate detection itself was working. Only the wording assertion failed. It
+reads like a test written against a planned message, before the handler settled on phrasing
+consistent with the department handlers.
 
 ### The fix
 
@@ -57,8 +57,8 @@ department handlers.
 #expect(conflictError.reason.contains("Jane Doe"))
 ```
 
-This asserts the substantive contract — the message identifies which employee collided — and
-survives rewording of "already exists".
+This asserts the substantive contract, that the message identifies which employee collided, and it
+survives any rewording of "already exists".
 
 ### Optional follow-up
 
@@ -69,12 +69,12 @@ the two drifting apart:
 #expect(conflictError.reason.contains("\(createRequest.firstName) \(createRequest.lastName)"))
 ```
 
-`testCreateDepartmentDuplicateName` has the same shape — it matches against the literal
+`testCreateDepartmentDuplicateName` has the same shape. It matches against the literal
 `"Duplicate Department"` rather than `createRequest.name`. Not broken, just repeated.
 
 ---
 
-## Issue 2 — Delete-not-found test never reached the handler
+## Issue 2, delete-not-found test never reached the handler
 
 **Status:** resolved, with a regression guard in place.
 
@@ -88,12 +88,11 @@ let response = try await application.sendRequest(.DELETE, "/api/departments.999"
 ```
 
 `/api/departments.999` is a single path component, not `/api/departments/999`. No route matched it,
-so Vapor's router returned its own `404` before any generated OpenAPI handler ran. The assertion
-saw the status it wanted and passed — for a completely different reason than intended.
+so Vapor's router returned its own `404` before any generated OpenAPI handler ran. The assertion saw
+the status it wanted and passed, for a different reason than intended.
 
-The test was green, and would have stayed green if `deleteDepartment` were deleted from
-`APIHandler` entirely. That is the hazard: it reported coverage of the delete-404 path that did not
-exist.
+The test was green, and would have stayed green if `deleteDepartment` were deleted from `APIHandler`
+entirely. That is the hazard: it reported coverage of a delete-404 path that did not exist.
 
 ### The fix
 
@@ -109,13 +108,13 @@ returns nil, and the handler returns `.notFound(.init())`.
 
 ### The regression guard
 
-Correcting the path fixed the defect but left nothing preventing its return: status alone cannot
+Correcting the path fixed the defect but left nothing to prevent its return. Status alone cannot
 distinguish the two `404`s this application can produce.
 
 | Source | Status | Body |
 | --- | --- | --- |
-| Vapor routing (no route matched) | `404` | `{"error":true,"reason":"Not Found"}` — 35 bytes |
-| `deleteDepartment` returning `.notFound(.init())` | `404` | *(empty — the spec declares no content for 404)* |
+| Vapor routing (no route matched) | `404` | `{"error":true,"reason":"Not Found"}`, 35 bytes |
+| `deleteDepartment` returning `.notFound(.init())` | `404` | *(empty, since the spec declares no content for 404)* |
 
 A body assertion pins which of the two is acceptable:
 
@@ -124,20 +123,19 @@ A body assertion pins which of the two is acceptable:
 #expect(response.body.readableBytes == 0)
 ```
 
-`TestingHTTPResponse.body` is a `ByteBuffer`, so `readableBytes` asserts emptiness without
-decoding.
+`TestingHTTPResponse.body` is a `ByteBuffer`, so `readableBytes` asserts emptiness without decoding.
 
 This is now in place on both `testDeleteDepartmentNotFound` and `testGetDepartmentDetailNotFound`.
 
 ### Confirming the guard works
 
-Per Step 5 of [`TESTING.md`](TESTING.md), the assertion was checked against the bug it exists to
-catch. Temporarily restoring the period in the path produced:
+Per Step 5 of [`TESTING.md`](TESTING.md), I checked the assertion against the bug it exists to catch.
+Temporarily restoring the period in the path produced:
 
 ```
 Expectation failed: (response.body.readableBytes → 35) == 0
 ```
 
-The status assertion still passed on its own — only the body check noticed the handler had never
-been entered. That is the failure mode the guard exists for, and it is the reason to keep the
-assertion even though it looks arbitrary next to a passing status check.
+The status assertion still passed on its own. Only the body check noticed the handler had never been
+entered. That is the failure mode the guard exists for, and it is the reason to keep the assertion
+even though it looks arbitrary next to a passing status check.

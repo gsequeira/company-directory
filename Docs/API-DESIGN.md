@@ -461,12 +461,134 @@ and how `.with(\.$employees)` eager loading works.
 optionally deletes the source. It is the first operation here that is not CRUD and the first that
 needs a transaction: two writes that must both land, or neither.
 
-**The decisions are open on #65**: the response shape, whether `deleteSourceAfterTransfer` belongs on
-the operation at all, `409` versus `422` for a same-department request, and what idempotency means
-for it. They are not recorded here because they are not made. The implementation is #66.
+The four decisions on #65 are recorded below as §3.1 to §3.4, with §3.5 covering three questions #65
+did not ask. The implementation is #66.
 
 [`LEARNING-PATH.md`](LEARNING-PATH.md) → *Phase 3, the operation that forces a transaction* holds the
-reasoning and the spec sketch.
+reasoning and the spec sketch. Two status codes in that sketch are overruled by §3.3.
+
+## 3.1 Decision, what a successful transfer returns
+
+The sketch declares `"200"` with no body. The alternatives are a `204`, consistent with `DELETE`, or a
+`200` carrying a summary of what the operation did.
+
+## Decided 2026-08-19, `200` with a count and a deletion flag
+
+```json
+{ "transferred": 12, "sourceDeleted": true }
+```
+
+The objection to a summary body is that no other endpoint in this API returns one. That does not
+apply, because no other endpoint is an operation. Every existing response is a resource, and no
+resource represents what happened here. Returning the target department hides the count, and
+returning the source is impossible in the case where the flag deleted it.
+
+`204` is the worst of the three specifically because `deleteSourceAfterTransfer` is optional. A caller
+who sent `true` would have no way to learn whether the delete happened without a second request that
+races against anyone else's writes.
+
+### What declaring `transferred` costs the implementation
+
+`QueryBuilder.update()` returns `Void` (`QueryBuilder+Concurrency.swift:11`), so a bulk update in
+Fluent reports no affected-row count. #66 therefore has three shapes available:
+
+- Select the matching ids inside the transaction, then update by id. One extra query, and the count is
+  of the rows that actually moved.
+- Count with the source filter, then update. Cheaper and wrong under concurrency: a row inserted
+  between the two statements is moved but not counted.
+- Drop to SQLKit for `UPDATE … RETURNING id`. Exact in one round trip, at the cost of leaving Fluent's
+  builder. `RequireEmployeeDepartment` already makes that trade once, for a reason it documents.
+
+**#66 takes the first.** It is the only option that is both exact and expressible in Fluent, and the
+rule it teaches is that the count has to be of the rows that moved rather than a separate count that
+can drift from them.
+
+## 3.2 Decision, does `deleteSourceAfterTransfer` belong on the operation
+
+One endpoint doing two things, with a flag deciding which, is usually two endpoints. The alternative
+is two calls, transfer and then `DELETE /departments/{id}`, which composes better and needs no flag.
+
+## Decided 2026-08-19, it stays, and the operation stays single-purpose
+
+Two separate calls cannot share a transaction. A client that transfers and then fails to delete leaves
+exactly the inconsistent state the transaction exists to prevent, so removing the flag removes the
+exercise.
+
+The flag is also not the case the general rule warns about. It does not change what happens to the
+employees. It adds a second write to the same transaction, so the operation has one purpose and two
+possible extents.
+
+The alternative recorded as rejected is two operations, `transfer` and `retire`, where `retire` is
+transfer plus delete. It avoids the flag honestly and duplicates the transaction logic for one lesson.
+
+### The failure this exposes, which #65 did not anticipate
+
+The foreign key is `onDelete: .restrict` (§2.4), so the delete fails while any employee still
+references the source. After the bulk update none should, unless a concurrent request creates an
+employee in the source department between the update and the delete. That transaction rolls back, and
+the caller receives a conflict that has nothing to do with the source and target being the same
+department. Two distinct failures then compete for one status code, which §3.3 separates.
+
+## 3.3 Decision, `409` or `422` when the request cannot work
+
+The sketch says `409` for a same-department request and a single `404` for *either department does not
+exist*. §2.1 chose `422 Unprocessable Content` for an employee naming a department that does not
+exist, on the grounds that the request is well-formed and the addressed resource exists, but something
+it names does not. Same-source-and-target is the same category of fault.
+
+## Decided 2026-08-19, `422` for both, and the sketch's `404` is overruled
+
+| Case | Code | Body |
+| --- | --- | --- |
+| The source department does not exist | `404` | Empty, it is the resource in the path |
+| The target department does not exist | `422` | `ReferenceError` |
+| The source and the target are the same | `422` | `ReferenceError` |
+| The delete is refused because a row still references the source | `409` | `ConflictError` |
+
+The rule underneath the table: the resource in the path answers `404`, a resource named in the body
+answers `422`, and `409` is reserved for the database refusing on live data.
+
+The sketch's `"404": Either department does not exist` conflates the first two rows, and §2.1 already
+rejected that conflation for `updateEmployee`, where `404` with an empty body means *no such employee*
+and the empty body is what distinguishes a handler `404` from a routing one. One status cannot carry
+both meanings on one operation.
+
+Keeping `409` for a same-department request would leave two adjacent operations answering the same
+class of fault two different ways. It would also leave the genuine conflict from §3.2 sharing a code
+with a request-shape error, where §3.3's split gives it a body that can say what actually happened.
+
+## 3.4 Decision, is the operation idempotent, and does that need engineering
+
+Running it twice with `deleteSourceAfterTransfer: true` moves zero employees the second time and then
+`404`s, because the source is gone.
+
+## Decided 2026-08-19, it is idempotent already, and nothing is engineered
+
+HTTP defines idempotence by the effect on server state, not by the response. Running the operation
+twice leaves the data identical, so it qualifies. The `404` is the correct answer to a request whose
+addressed resource no longer exists, rather than a violation of anything.
+
+The non-idempotent response only arises with the flag set. With `deleteSourceAfterTransfer: false` the
+second call answers `200` with `transferred: 0`, which is idempotent in status as well as in effect.
+`POST` carries no idempotence requirement in either case.
+
+Engineering it would mean an idempotency-key table, a stored response per key, an expiry policy, and a
+definition of what makes two requests the same. That is its own phase. The concurrency lesson already
+queued behind this one is #69's compare-and-swap.
+
+## 3.5 Settled alongside, three questions #65 did not ask
+
+**An empty source is not an error.** The response is `transferred: 0`, and the delete succeeds if the
+flag was set. Without this stated, `409` is the obvious wrong answer for somebody to reach for.
+
+**Transfer moves departed employees, once Phase 4 exists.** §4.3 depends on it. Transfer is the
+escape hatch for deleting a department, departed employees still hold a `departmentId`, and they still
+block the delete. Phase 3 moves every employee in the source department, which stays correct when
+status arrives, so #68 does not reopen this. The fidelity cost is the one §4.3 already accepts
+knowingly and #72 proposes to fix.
+
+**The source is deleted, not archived.** Department retirement as distinct from deletion is #72's
+territory. The flag settles what this operation does and settles nothing about that.
 
 ---
 
@@ -706,7 +828,7 @@ operations, so the gap is not reproduced.
 1. **Phase 1.** Employee CRUD, plus the uniqueness and `PATCH` decisions. Complete 2026-08-16.
 2. **Phase 2.** The relationship, plus the delete-semantics and required-department decisions.
    Complete 2026-08-17.
-3. **Phase 3.** The transfer operation, and the transaction it forces. Decisions open on #65,
+3. **Phase 3.** The transfer operation, and the transaction it forces. Decisions closed (§3.1–§3.5),
    implementation #66.
 4. **Phase 4.** Employment status, and the state machine it forces. Decisions closed (§4.2–§4.6),
    implementation #68, then #69 for the concurrency-safe transition.

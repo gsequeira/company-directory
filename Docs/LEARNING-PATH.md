@@ -234,7 +234,14 @@ exercises below are chosen so that the naive implementation fails a test you can
         "409": { description: The source and target are the same department. }
 ```
 
-The open design questions on this phase are tracked on #65, and the implementation on #66.
+The design questions on this phase were decided on #65 and are recorded in
+[`API-DESIGN.md`](API-DESIGN.md) → *3.1 Decision, what a successful transfer returns* onwards. The
+implementation is #66.
+
+Two status codes in the sketch above did not survive that. The `409` for a same-department request
+became `422`, and the single `404` for *either department does not exist* split into `404` for the
+source, which is the resource in the path, and `422` for the target, which is named in the body.
+§3.3 has the reasoning. The sketch is left as it was written, because it records what was proposed.
 
 ### Why it forces one
 
@@ -288,6 +295,10 @@ Ask whether this operation is idempotent. Run it twice: the second run moves zer
 source is already gone, so it `404`s. That is naturally idempotent for a different reason than a
 payment endpoint would be, and thinking it through sharpens what idempotency means before reaching a
 case where it has to be engineered deliberately.
+
+That question was answered on #65 and is recorded as `API-DESIGN.md` §3.4: the operation is already
+idempotent by HTTP's definition, which concerns the effect on server state rather than the response,
+and nothing is engineered for it.
 
 ## Phase 4, the operation that forces a state machine
 

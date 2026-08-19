@@ -330,7 +330,7 @@ Nothing here handles secrets yet, and that is worth preserving deliberately.
 | Item | Why | Status |
 | --- | --- | --- |
 | Branch protection requiring the check | Turns a report into a gate. The single highest-value follow-up | Issue #28, blocked on the plan rather than the effort |
-| `.build` caching keyed on toolchain version | 682s of every run is cold compile | Issue #30 |
+| `.build` caching keyed on toolchain version | 682s of every run is cold compile | Issue #30. The design, and the four ways the obvious version of it goes wrong, are in [`BUILD-CACHE.md`](BUILD-CACHE.md) |
 | `--warnings-as-errors` | Would currently fail on the unused-result warning in `TestHelpers.swift:47` | Issue #37 |
 
 The `swift format lint --strict` step landed with #6 and runs before the tests. See *Part 3, anatomy

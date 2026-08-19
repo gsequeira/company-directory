@@ -48,8 +48,8 @@ need the separate `db-test` service. Then `swift test`.
 
 The rest are reference, best reached from those five. `POSTGRES.md`, `FLUENT.md`, `MIGRATIONS.md`
 and `TOOLCHAIN.md` cover the stack. `TESTING.md`, `API-COVERAGE.md`, `ISSUES.md` and `CI.md` cover
-the checks. `MIDDLEWARE.md` holds what is planned, and `ISSUE-LOG.md` holds what is already
-finished, naming the document that absorbed each lesson.
+the checks. `MIDDLEWARE.md` and `BUILD-CACHE.md` hold what is planned but not built, and
+`ISSUE-LOG.md` holds what is already finished, naming the document that absorbed each lesson.
 
 Outstanding work lives in GitHub Issues, not in `Docs/`. Read the document for *why*, the issue for
 *whether it is done*.

@@ -6,7 +6,7 @@ currently answers something wrong.
 **Recorded 2026-08-16**, against `main` with Phase 1 complete. **Rewritten 2026-08-17 for #18**,
 which gives every employee a department and adds the `422` and `409` cases below.
 `Scripts/playbook-replay.sh` replays this file against a running server and checks every status,
-**32 commands, all passing**, which is how the employee section's staleness surfaced the moment the
+**40 commands, all passing**, which is how the employee section's staleness surfaced the moment the
 relationship landed rather than by reading. **Every response below is real output**, captured from a
 running server rather than written from the spec, the same standard as
 [`POSTGRES.md`](POSTGRES.md). If a response here disagrees with the one you get, the document is
@@ -37,6 +37,10 @@ Every status the spec declares, by entity. All of them are demonstrated below.
 | `DELETE /api/departments/{id}` | `204` | Deleted; no body |
 | | `404` | No department with that id |
 | | `409` | Employees are still assigned to it; the reason says how many |
+| `POST /api/departments/{id}/transfer` | `200` | How many moved, and whether the source was deleted |
+| | `404` | No department with that id; empty body |
+| | `409` | An employee was assigned to the source mid-transfer, so nothing moved |
+| | `422` | The target names no department, or names the source |
 
 ### Employees
 
@@ -62,8 +66,8 @@ Every status the spec declares, by entity. All of them are demonstrated below.
 | `GET /health` | `200` | Registered outside the OpenAPI transport, so no `/api` prefix |
 | Any operation, malformed input | `500` | Undeclared and incorrect; should be `400` (#2) |
 
-Twenty-three declared statuses across ten operations, and every one of them has an automated test as
-well. See [`API-COVERAGE.md`](API-COVERAGE.md).
+Twenty-seven declared statuses across eleven operations, and every one of them has an automated test
+as well. See [`API-COVERAGE.md`](API-COVERAGE.md).
 
 ## Start it
 
@@ -296,6 +300,62 @@ $ http DELETE :8080/api/employees/999          → 404, content-length: 0
 there is no N+1 here. That changes the day a response carries the department's *name* instead of its
 id. See [`FLUENT.md`](FLUENT.md) → *The N+1 problem*.
 
+## Transferring every employee out of a department
+
+The first operation here that is not CRUD, and the first that needs a transaction. It moves every
+employee into another department and optionally deletes the source, and both writes land or neither
+does. `Augusta` is currently the only employee, in `Engineering`, so give her somewhere to go:
+
+```console
+$ http POST :8080/api/departments name=Platform                        → 201
+{ "id" : 3, "name" : "Platform" }
+```
+
+The response is a summary of the work rather than a resource, because no resource represents what
+happened. Returning the target department would hide the count, and returning the source is
+impossible in the case where the flag deleted it. See [`API-DESIGN.md`](API-DESIGN.md) §3.1.
+
+```console
+$ http POST :8080/api/departments/1/transfer targetDepartmentId:=3      → 200
+{ "sourceDeleted" : false, "transferred" : 1 }
+
+$ http GET :8080/api/employees/1                                        → 200
+{ "departmentId" : 3, "firstName" : "Augusta", "id" : 1, "lastName" : "Lovelace" }
+```
+
+**Three ways to get it wrong, and they do not share a status code.** The rule is that the resource in
+the path answers `404`, a resource named in the body answers `422`, and `409` is reserved for the
+database refusing on live data. §3.3 has the reasoning.
+
+```console
+$ http POST :8080/api/departments/3/transfer targetDepartmentId:=3      → 422
+{ "error" : true, "reason" : "Department 3 cannot be transferred into itself" }
+
+$ http POST :8080/api/departments/3/transfer targetDepartmentId:=999    → 422
+{ "error" : true, "reason" : "No department exists with id 999" }
+
+$ http POST :8080/api/departments/999/transfer targetDepartmentId:=3    → 404, content-length: 0
+```
+
+`deleteSourceAfterTransfer` moves everyone back and retires `Platform` in the same transaction. This
+is the intended way to close a department down, and the reason §2.4's restriction on deleting a
+department that still has employees is a restriction rather than an obstacle:
+
+```console
+$ http POST :8080/api/departments/3/transfer targetDepartmentId:=1 deleteSourceAfterTransfer:=true   → 200
+{ "sourceDeleted" : true, "transferred" : 1 }
+
+$ http GET :8080/api/departments/3                                      → 404, content-length: 0
+```
+
+The `409` this operation declares is not reachable by hand. It fires when an employee is assigned to
+the source between the move and the delete, which is a race a client loses rather than a request it
+can send. `Docs/API-DESIGN.md` §3.1 records the seam the test suite uses to reach it.
+
+Running the whole thing twice is safe: the second call moves nobody and the source no longer exists,
+so it answers `404`. That is idempotent by HTTP's definition, which concerns the effect on server
+state rather than the response. §3.4.
+
 ## Running it as a script
 
 `Scripts/smoke.sh` walks the same round trip automatically. It needs a database and a **running
@@ -477,7 +537,8 @@ write assertions against position until #3 lands.
 
 Every request above succeeded without a credential, because none exists.
 
-The spec used to declare `401` on two of the ten operations and could produce it on none. It was a
+The spec used to declare `401` on two of the ten operations that existed then, and could produce it
+on none. It was a
 response no code path could return, and asymmetric besides, since it claimed creating a department
 needed authentication while deleting one did not. **#11 deleted both declarations**, so the contract
 now describes the server that exists rather than one that does not. #24 is the feature itself, and

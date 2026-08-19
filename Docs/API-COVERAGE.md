@@ -27,9 +27,10 @@ of the work below *after* the design phases.
 Every operation in the spec has at least one test, so no endpoint is completely unexercised.
 Beneath that headline:
 
-- **23 of 23 declared responses are tested.** #18 added three, `422` on `createEmployee` and
-  `updateEmployee` and `409` on `deleteDepartment`, and each arrived with its test. #11 had already
-  deleted the two `401` declarations, which were the only untestable ones.
+- **27 of 27 declared responses are tested.** #18 added three, `422` on `createEmployee` and
+  `updateEmployee` and `409` on `deleteDepartment`, and #66 added four more with `transferEmployees`.
+  Each arrived with its test. #11 had already deleted the two `401` declarations, which were the
+  only untestable ones.
 - **Malformed input returns `500` on every endpoint**, an undeclared status that violates the
   contract everywhere. No test sends invalid input, which is why this went unnoticed.
 
@@ -54,6 +55,7 @@ Beneath that headline:
 | `getDepartmentDetail` | 200, 404 | 200, 404 | none |
 | `updateDepartment` | 200, 404, 409 | 200, 404, 409 | none |
 | `deleteDepartment` | 204, 404, 409 | 204, 404, 409 | none |
+| `transferEmployees` | 200, 404, 409, 422 | 200, 404, 409, 422 | none |
 | `listEmployees` | 200 | 200 | none |
 | `createEmployee` | 201, 409, 422 | 201, 409, 422 | none |
 | `getEmployeeDetail` | 200, 404 | 200, 404 | none |

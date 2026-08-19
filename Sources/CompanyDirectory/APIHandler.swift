@@ -15,9 +15,26 @@ import Vapor
 ///
 /// - **Malformed input returns `500`, not `400`.** `swift-openapi-vapor` surfaces request-decoding
 ///   failures as unhandled errors. `500` is declared nowhere, so this breaks the contract on all
-///   ten operations. Tracked by #2; see `Docs/API-COVERAGE.md` and `Docs/MIDDLEWARE.md`.
+///   eleven operations. Tracked by #2; see `Docs/API-COVERAGE.md` and `Docs/MIDDLEWARE.md`.
 struct APIHandler: APIProtocol {
     let database: Database
+
+    /// A seam that exists for one test, and is `nil` everywhere else.
+    ///
+    /// `transferEmployees` runs two writes in a transaction, and the only evidence the transaction
+    /// exists is that a failure between them rolls the first one back. With this schema there is no
+    /// way to make the delete fail *after* a correct update: the update moves every employee out of
+    /// the source, and nothing else references a department. The failure is reachable only in the
+    /// window between the two writes, which no client can aim at.
+    ///
+    /// So the test supplies a closure that inserts an employee into the source department on a
+    /// separate connection and commits it. The delete then fails against a real `onDelete:
+    /// .restrict` foreign key rather than a thrown stub, which is the failure a client would
+    /// actually hit by losing that race. `Docs/API-DESIGN.md` §3.2 records why that race is real.
+    ///
+    /// Kept as an explicit parameter rather than a mutable global so the coupling is visible in the
+    /// signature. Production code never sets it.
+    var beforeSourceDelete: (@Sendable () async throws -> Void)?
 
     /// `GET /api/departments`
     ///
@@ -220,6 +237,124 @@ struct APIHandler: APIProtocol {
         }
 
         return .noContent(.init())
+    }
+
+    /// `POST /api/departments/{departmentId}/transfer`
+    ///
+    /// Moves every employee out of this department into another, and optionally deletes this one
+    /// once it is empty. The first operation here that is not CRUD, and the first that needs a
+    /// transaction: both writes land or neither does.
+    ///
+    /// - `200` — how many employees moved, and whether the source was deleted.
+    /// - `404` — no department has that id. The source is the resource in the path, so it answers
+    ///   with an empty body like every other `{departmentId}` operation.
+    /// - `409` — the delete was refused because an employee was assigned to the source while the
+    ///   transfer was running. Reachable only by losing that race.
+    /// - `422` — the target does not exist, or is the source. Both are named in the *body*, which
+    ///   is what separates them from the `404`. `Docs/API-DESIGN.md` §3.3 has the rule.
+    func transferEmployees(_ input: Operations.TransferEmployees.Input) async throws
+        -> Operations.TransferEmployees.Output
+    {
+        switch input.body {
+        case .json(let transferRequest):
+            let sourceId = input.path.departmentId
+            let targetId = transferRequest.targetDepartmentId
+
+            guard let source = try await Models.Department.find(sourceId, on: database) else {
+                return .notFound(.init())
+            }
+
+            if targetId == sourceId {
+                return .unprocessableContent(
+                    .init(
+                        body: .json(
+                            Components.Schemas.ReferenceError(
+                                error: true,
+                                reason: "Department \(sourceId) cannot be transferred into itself"
+                            )
+                        )
+                    )
+                )
+            }
+
+            guard try await Models.Department.find(targetId, on: database) != nil else {
+                return .unprocessableContent(
+                    .init(
+                        body: .json(
+                            Components.Schemas.ReferenceError(
+                                error: true,
+                                reason: "No department exists with id \(targetId)"
+                            )
+                        )
+                    )
+                )
+            }
+
+            let deleteSource = transferRequest.deleteSourceAfterTransfer ?? false
+            let transferred: Int
+
+            do {
+                transferred = try await database.transaction { db in
+                    // **Every query in this closure uses `db`, the transaction handle.** Writing
+                    // `query(on: database)` here — the captured outer property — compiles, runs,
+                    // and executes outside the transaction, leaving it wrapping nothing. Nothing
+                    // in the compiler or in Fluent reports that, and every happy-path test still
+                    // passes. The rollback test is what catches it.
+                    let employees = try await Models.Employee.query(on: db)
+                        .filter(\.$department.$id == sourceId)
+                        .all()
+
+                    // The count has to be of the rows actually moved. Counting separately and then
+                    // updating by filter would drift: a row inserted between the two statements is
+                    // moved but not counted. `Docs/API-DESIGN.md` §3.1 records why, and why Fluent
+                    // leaves no third option — `QueryBuilder.update()` returns `Void`.
+                    let ids = try employees.map { try $0.requireID() }
+
+                    if !ids.isEmpty {
+                        try await Models.Employee.query(on: db)
+                            .filter(\.$id ~~ ids)
+                            .set(\.$department.$id, to: targetId)
+                            .update()
+                    }
+
+                    try await beforeSourceDelete?()
+
+                    if deleteSource {
+                        try await source.delete(on: db)
+                    }
+
+                    return ids.count
+                }
+            } catch let error where ConstraintViolation(error) == .foreignKey {
+                // An employee was assigned to the source between the move and the delete, so the
+                // `.restrict` foreign key refused it and the whole transaction rolled back.
+                // Nobody moved, and the message says nothing about a count for the same reason
+                // `deleteDepartment`'s race path does not.
+                return .conflict(
+                    .init(
+                        body: .json(
+                            Components.Schemas.ConflictError(
+                                error: true,
+                                reason:
+                                    "Department '\(source.name)' was given an employee while the "
+                                    + "transfer was running, so nothing was transferred"
+                            )
+                        )
+                    )
+                )
+            }
+
+            return .ok(
+                .init(
+                    body: .json(
+                        Components.Schemas.TransferResult(
+                            transferred: transferred,
+                            sourceDeleted: deleteSource
+                        )
+                    )
+                )
+            )
+        }
     }
 
     /// `GET /api/employees`

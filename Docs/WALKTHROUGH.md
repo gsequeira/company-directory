@@ -330,7 +330,7 @@ section. [`MIDDLEWARE.md`](MIDDLEWARE.md) → *What is registered today*.
 | `409` from `deleteDepartment` | The department still has employees; the reason says how many ([`API-DESIGN.md`](API-DESIGN.md) → *2.4*) |
 | `422` for an unknown `departmentId` | The body is well-formed and the reference is not. See below, because this is not what was planned |
 | `200` for an empty `PATCH` | A client diffing to build a patch legitimately produces `{}` ([`API-DESIGN.md`](API-DESIGN.md) → *1.3*) |
-| `500` for malformed input | **Wrong.** Undeclared, and it breaks the contract on all ten operations ([#2](https://github.com/sequeiralabs/company-directory/issues/2)) |
+| `500` for malformed input | **Wrong.** Undeclared, and it breaks the contract on all eleven operations ([#2](https://github.com/sequeiralabs/company-directory/issues/2)) |
 | `500` while the database is down | **Wrong.** A dependency being unreachable is a `503` ([#58](https://github.com/sequeiralabs/company-directory/issues/58)) |
 
 The last two rows are why this section exists. A walkthrough that only describes what the code gets

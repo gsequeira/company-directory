@@ -194,7 +194,7 @@ default:                               // 500
 
 `swift-openapi-vapor` surfaces a request-decoding failure as an ordinary error, not an `AbortError`,
 so it falls to `default` and becomes a `500`, a status declared nowhere in the spec, breaking the
-contract on all ten operations.
+contract on all eleven operations.
 
 Two consequences worth separating. The status is wrong, which is #2. And outside a release build the
 body carries `String(describing: error)`, so a client-side typo gets back the internals of a decoding

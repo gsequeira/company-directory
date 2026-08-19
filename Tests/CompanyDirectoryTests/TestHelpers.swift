@@ -15,6 +15,21 @@ struct TestHelpers {
     /// port is overridable so CI can point elsewhere, but `company_directory_test` is not — a misconfigured
     /// port then fails to connect rather than reaching the development database, which
     /// `withApplication` would proceed to drop every table in.
+    ///
+    /// `maxConnectionsPerEventLoop` is **2 here and 1 in production**, and the difference is
+    /// load-bearing for one test.
+    ///
+    /// `FluentPostgresConfiguration` defaults it to 1. The transfer rollback test needs a second
+    /// connection while a transaction holds the first, because its hook has to commit a row from
+    /// outside that transaction. With one connection the hook waits for the connection the
+    /// transaction is holding, and the request dies with `connectionRequestTimeout` after ten
+    /// seconds. It passed locally by luck of event-loop assignment and deadlocked on CI's two-core
+    /// runner, which is how this was found.
+    ///
+    /// Raising it also restores the behaviour every write-up of the transaction bug describes:
+    /// with a spare connection, `query(on: database)` inside a transaction closure really does
+    /// execute outside it, silently. So the rollback test detects that mistake by asserting on the
+    /// data rather than by timing out, which is the assertion worth having.
     private static func databaseConfiguration() -> DatabaseConfigurationFactory {
         .postgres(
             configuration: .init(
@@ -24,7 +39,8 @@ struct TestHelpers {
                 password: "company_directory",
                 database: "company_directory_test",
                 tls: .disable
-            )
+            ),
+            maxConnectionsPerEventLoop: 2
         )
     }
 
@@ -38,13 +54,32 @@ struct TestHelpers {
     ///
     /// The revert and shutdown run on both the success and failure paths, so a failing test still
     /// leaves the database clean for the next one.
-    static func withApplication<T>(_ testBody: (Application) async throws -> T) async throws -> T {
+    ///
+    /// - Parameter beforeSourceDelete: Handed to `APIHandler`. Only the transfer rollback test
+    ///   supplies one; every other test leaves it `nil` and never sees it. It takes the
+    ///   `Application` because the handler's seam is installed before one exists, and the hook
+    ///   needs a connection that is *not* the transaction's.
+    static func withApplication<T>(
+        beforeSourceDelete: (@Sendable (Application) async throws -> Void)? = nil,
+        _ testBody: (Application) async throws -> T
+    ) async throws -> T {
         let application = try await Application.make(.testing)
 
         do {
+            // Bound here rather than at the call site, because the hook needs the `Application`
+            // and the seam is installed while one is being built.
+            var handlerHook: (@Sendable () async throws -> Void)?
+            if let beforeSourceDelete {
+                handlerHook = { try await beforeSourceDelete(application) }
+            }
+
             // The configuration is passed in rather than left to `configureDatabase`'s default,
             // which resolves to the *development* database.
-            try await configureServer(application, databaseConfiguration: databaseConfiguration())
+            try await configureServer(
+                application,
+                databaseConfiguration: databaseConfiguration(),
+                beforeSourceDelete: handlerHook
+            )
 
             let result = try await testBody(application)
 

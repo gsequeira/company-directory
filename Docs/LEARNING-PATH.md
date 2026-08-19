@@ -268,10 +268,42 @@ try await database.transaction { db in
 ```
 
 The closure hands you a `db`, and **every query inside must use it**. Writing `query(on: database)`,
-the captured outer property, compiles, runs, and silently executes outside the transaction. The
-result is a transaction wrapping nothing, with no warning of any kind.
+the captured outer property, compiles and runs, and the transaction ends up wrapping nothing.
 
-This is the most common Fluent transaction bug and it is invisible until you test the rollback path.
+### What that actually does here, measured 2026-08-19
+
+The usual description of this bug, including the one this section carried until #66 was built, is
+that the stray query executes outside the transaction silently. That is not what happens in this
+project, and the reason is the connection pool.
+
+`FluentPostgresConfiguration` defaults `maxConnectionsPerEventLoop` to `1`, and nothing here
+overrides it. The transaction holds that one connection for its whole duration, so a query on the
+outer `database` has none to take. It waits, and the request dies about ten seconds later:
+
+```
+Server error - cause description: 'User handler threw an error.',
+underlying error: connectionRequestTimeout, operationID: transferEmployees
+```
+
+So against the production configuration the mistake presents as a hang followed by a `500`, not as
+quietly wrong data. It only becomes silent on a pool with room for a second connection, which is the
+configuration most write-ups assume.
+
+### Which is why the suite runs on a pool of two
+
+`TestHelpers` sets `maxConnectionsPerEventLoop: 2`, and that is deliberate rather than incidental.
+The rollback test's hook has to commit a row from outside the transaction while the transaction is
+open, so it needs a second connection. On one connection the hook waits for the one the transaction
+is holding and the request times out.
+
+That was not found by reasoning about it. The test passed locally, where the hook happened to land on
+a different event loop, and deadlocked on CI's two-core runner. A test that depends on how many cores
+the machine has is not a test.
+
+The raised pool has a second effect worth stating plainly: it puts the suite in the configuration
+where the mistake **is** silent, so the rollback test catches it by asserting on the data rather than
+by timing out. That assertion is the one worth having, because it still holds on the day the pool
+size changes again.
 
 ### Testing the rollback, which is the actual exercise
 
@@ -288,6 +320,21 @@ split across two departments with nothing recording it.
 
 The alternative is a test-only injected throw. Same lesson, less elegant. Prefer the constraint
 violation, because the failure is real rather than simulated.
+
+### Step 1 does not survive contact, corrected 2026-08-19 in #66
+
+"A deliberate filter bug" means editing the handler to be wrong, which a test suite cannot do. And
+with this schema no *correct* transfer can leave the delete failing: the update moves every employee
+out of the source, and nothing else references a department. The failure exists only in the window
+between the two writes, which no client can aim at.
+
+What was built instead keeps the real constraint violation and gives the test a way to reach that
+window. `APIHandler` carries a `beforeSourceDelete` closure, `nil` in production and supplied by one
+test, invoked between the move and the delete. The test's closure assigns an employee to the source
+department **on a different connection** and commits, so the `.restrict` foreign key refuses the
+delete for exactly the reason a client would hit by losing that race.
+
+The assertion is still step 3, and still the point: nobody moved.
 
 ### An aside worth noticing
 

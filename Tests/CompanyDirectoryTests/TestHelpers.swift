@@ -38,13 +38,31 @@ struct TestHelpers {
     ///
     /// The revert and shutdown run on both the success and failure paths, so a failing test still
     /// leaves the database clean for the next one.
-    static func withApplication<T>(_ testBody: (Application) async throws -> T) async throws -> T {
+    /// - Parameter beforeSourceDelete: Handed to `APIHandler`. Only the transfer rollback test
+    ///   supplies one; every other test leaves it `nil` and never sees it. It takes the
+    ///   `Application` because the handler's seam is installed before one exists, and the hook
+    ///   needs a connection that is *not* the transaction's.
+    static func withApplication<T>(
+        beforeSourceDelete: (@Sendable (Application) async throws -> Void)? = nil,
+        _ testBody: (Application) async throws -> T
+    ) async throws -> T {
         let application = try await Application.make(.testing)
 
         do {
             // The configuration is passed in rather than left to `configureDatabase`'s default,
             // which resolves to the *development* database.
-            try await configureServer(application, databaseConfiguration: databaseConfiguration())
+            // Bound here rather than at the call site, because the hook needs the `Application`
+            // and the seam is installed while one is being built.
+            var handlerHook: (@Sendable () async throws -> Void)?
+            if let beforeSourceDelete {
+                handlerHook = { try await beforeSourceDelete(application) }
+            }
+
+            try await configureServer(
+                application,
+                databaseConfiguration: databaseConfiguration(),
+                beforeSourceDelete: handlerHook
+            )
 
             let result = try await testBody(application)
 

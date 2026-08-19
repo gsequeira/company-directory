@@ -5,16 +5,16 @@ contains data actually behaves like.
 
 
 > **Renamed 2026-08-16.** This project was called `foobar` until the module became
-> `CompanyDirectory`. Captured output below still shows the old name — for example
-> `foobar.Migrations.CreateDepartments` — because it is a record of what actually ran. The
-> database, its user and its volume were renamed to `company_directory` in the same change.
-> Underscores rather than hyphens, because a hyphenated PostgreSQL identifier must be quoted in
-> every statement that names it. See #52.
+> `CompanyDirectory`. Captured output below still shows the old name,
+> `foobar.Migrations.CreateDepartments` for instance, because it is a record of what actually ran.
+> The database, its user and its volume became `company_directory` in the same change. Underscores
+> rather than hyphens, because a hyphenated PostgreSQL identifier must be quoted in every statement
+> that names it. See #52.
 
 **Written 2026-08-14**, from a worked example: adding the unique constraint behind
-`createEmployee`'s 409. That migration failed on the first attempt, which is the reason this
-document exists — the first four migrations in this project all ran against an empty schema, which
-is the easy case and teaches almost nothing.
+`createEmployee`'s 409. That migration failed on the first attempt, which is the reason this document
+exists. The first four migrations in this project all ran against an empty schema, which is the easy
+case and teaches almost nothing.
 
 Companion documents: [`POSTGRES.md`](POSTGRES.md) is how the database got here,
 [`API-DESIGN.md`](API-DESIGN.md) holds the design decisions a migration implements, and
@@ -22,17 +22,17 @@ Companion documents: [`POSTGRES.md`](POSTGRES.md) is how the database got here,
 
 ## The three rules
 
-**1. Append, never amend.** Once a migration has run anywhere — including your own development
-database — it is history. Fluent records each applied migration in the `_fluent_migrations` table
-and skips anything already listed, so editing an existing migration changes nothing on any database
-where it has already been applied. It only affects databases created from scratch afterwards, which
-is the worst possible outcome: two databases with the same migration list and different schemas.
+**1. Append, never amend.** Once a migration has run anywhere, including your own development
+database, it is history. Fluent records each applied migration in the `_fluent_migrations` table and
+skips anything already listed, so editing an existing migration changes nothing on any database where
+it has already been applied. It only affects databases created from scratch afterwards, which is the
+worst possible outcome: two databases with the same migration list and different schemas.
 
 **2. `.update()` for an existing table, `.create()` for a new one.** `.create()` on a table that
 exists fails; `.update()` emits `ALTER TABLE`.
 
-**3. Write the data query before the migration.** Any constraint you add can be violated by rows
-that are already there. Find out first:
+**3. Write the data query before the migration.** Rows that are already there can violate any
+constraint you add. Find out first:
 
 ```sql
 -- Before adding a unique constraint on (first_name, last_name):
@@ -42,8 +42,8 @@ group by first_name, last_name
 having count(*) > 1;
 ```
 
-If that returns rows, you have a **data** problem to solve before you have a schema problem, and
-the decision — delete, merge, or rename — is a product decision, not a technical one.
+If that returns rows, you have a **data** problem to solve before you have a schema problem, and the
+decision to delete, merge or rename is a product decision rather than a technical one.
 
 ## Anatomy
 
@@ -65,8 +65,8 @@ struct AddEmployeeNameUniqueness: AsyncMigration {
 }
 ```
 
-`revert` is not optional in practice. It is what the test suite runs after every single test — see
-*Revert is already tested* below — so a wrong `revert` breaks the suite immediately.
+`revert` is not optional in practice. It is what the test suite runs after every single test, as
+*Revert is already tested* below describes, so a wrong `revert` breaks the suite immediately.
 
 Register it in `Database.swift`, appending to the list:
 
@@ -82,26 +82,26 @@ Order matters and is append-only. `autoMigrate()` runs the ones not yet recorded
 
 ### Constraint names are generated
 
-Fluent derives them, and you will see these names in error messages, so they are worth being able
-to predict. From `FluentSQL/SQLSchemaConverter.swift:127`:
+Fluent derives them, and you will see these names in error messages, so they are worth being able to
+predict. From `FluentSQL/SQLSchemaConverter.swift:127`:
 
 ```
 prefix ":" table "." column ["+" table "." column ...]
 ```
 
-giving `uq:employees.first_name+employees.last_name`, and `fk:` for foreign keys. `unique(on:)`
-takes an optional `name:` if you want to choose your own.
+giving `uq:employees.first_name+employees.last_name`, and `fk:` for foreign keys. `unique(on:)` takes
+an optional `name:` if you want to choose your own.
 
 ---
 
-# Worked example: adding uniqueness to `employees`
+# Worked example, adding uniqueness to `employees`
 
 ## The starting condition
 
 `createEmployee` returned 409 for a duplicate name, enforced only by a pre-check query in the
 handler, with no constraint behind it. Two concurrent requests could both pass the check and both
-insert. To reproduce a realistic "table already has bad data" situation — realistic precisely
-because nothing prevented it — the duplicates went in directly:
+insert. To reproduce a realistic "table already has bad data" situation, realistic because nothing
+prevented it, the duplicates went in directly:
 
 ```sql
 insert into employees (first_name, last_name, inserted_at, updated_at) values
@@ -130,17 +130,17 @@ error=configurationFailed(...) [foobar] Application startup failed
 Three things to take from that output.
 
 **The application refused to start.** `configureDatabase` throws, `Entrypoint` catches, logs and
-exits 1. That is the right behaviour — a server running against a half-migrated schema is worse
-than a server that is down.
+exits 1. That is the right behaviour. A server running against a half-migrated schema is worse than a
+server that is down.
 
-**The generated SQL is right there in the error.** `query:` shows exactly what Fluent emitted. When
-a migration does something unexpected, this is the first place to look, ahead of any guessing about
+**The generated SQL is right there in the error.** `query:` shows exactly what Fluent emitted. When a
+migration does something unexpected, this is the first place to look, ahead of any guessing about
 what the DSL means.
 
-**SQLSTATE `23505` is the unique-violation code.** Match on that, never on the message text — see
+**SQLSTATE `23505` is the unique-violation code.** Match on that, never on the message text. See
 *The constraint alone was not enough* below.
 
-## What the failure left behind: nothing
+## What the failure left behind, which is nothing
 
 ```
 Indexes:
@@ -151,12 +151,12 @@ _fluent_migrations:
     foobar.Migrations.CreateDepartments   batch 1
 ```
 
-No constraint, and no row recording the attempt. **PostgreSQL runs DDL inside transactions**, so
-the failed `ALTER TABLE` took itself with it, and the migration stayed cleanly re-runnable.
+No constraint, and no row recording the attempt. **PostgreSQL runs DDL inside transactions**, so the
+failed `ALTER TABLE` took itself with it, and the migration stayed cleanly re-runnable.
 
-This is not universal and is worth knowing as a PostgreSQL property rather than a general one.
-MySQL does not have transactional DDL; a failure part-way through leaves the schema in whatever
-state it reached, and recovering means inspecting the table to work out how far it got.
+This is not universal and is worth knowing as a PostgreSQL property rather than a general one. MySQL
+does not have transactional DDL; a failure part-way through leaves the schema in whatever state it
+reached, and recovering means inspecting the table to work out how far it got.
 
 ## Fix the data, then re-run
 
@@ -167,9 +167,9 @@ where e.first_name = keep.first_name
   and e.id > keep.id;
 ```
 
-Keeping the lowest `id` of each group is the right call *here* because the rows are development
-seed data. In production this is where the real work is — deciding which record is canonical,
-whether the others have references pointing at them, and whether anyone needs to be told.
+Keeping the lowest `id` of each group is the right call *here* because the rows are development seed
+data. In production this is where the real work is: deciding which record is canonical, whether the
+others have references pointing at them, and whether anyone needs to be told.
 
 Second run:
 
@@ -180,7 +180,7 @@ Second run:
 ```
 
 Only the new migration ran. `CreateDepartments` and `CreateEmployees` were skipped because
-`_fluent_migrations` already lists them — rule 1 in action.
+`_fluent_migrations` already lists them, which is rule 1 in action.
 
 ## The result
 
@@ -223,16 +223,17 @@ covers:
 
 | Query | Uses the index? |
 | --- | --- |
-| `WHERE first_name = ?` | Yes — leftmost prefix |
-| `WHERE first_name = ? AND last_name = ?` | Yes — the whole key |
-| `WHERE last_name = ?` | **No** — sequential scan |
+| `WHERE first_name = ?` | Yes, leftmost prefix |
+| `WHERE first_name = ? AND last_name = ?` | Yes, the whole key |
+| `WHERE last_name = ?` | **No**, sequential scan |
 
 Which matters sooner than it sounds: "find people by surname" is the obvious first feature of a
 directory search, and the index that already exists does not help it. The fix is a second index on
-`last_name`, not a reordering — reordering would just move the problem to first-name lookups.
+`last_name` rather than a reordering, since reordering would just move the problem to first-name
+lookups.
 
 So the order in `unique(on: "first_name", "last_name")` is a choice about which queries get to be
-fast, and it was made implicitly. Worth revisiting when the filtering work starts.
+fast, and it got made implicitly. Worth revisiting when the filtering work starts.
 
 **Verify with `EXPLAIN ANALYZE`, and mind the trap:**
 
@@ -242,8 +243,8 @@ EXPLAIN ANALYZE SELECT * FROM employees WHERE last_name = 'Doe';
 
 On a two-row table PostgreSQL will choose a sequential scan **whichever indexes exist**, because
 reading two rows is cheaper than consulting an index to read two rows. The planner is right, and it
-means index experiments are meaningless without realistic row counts. `generate_series` is the
-usual way to make some:
+means index experiments are meaningless without realistic row counts. `generate_series` is the usual
+way to make some:
 
 ```sql
 INSERT INTO employees (first_name, last_name, inserted_at, updated_at)
@@ -257,33 +258,33 @@ Do that against the **test** database, or be ready to `docker compose down -v`.
 The `batch` column is the unit of `revert`, not the individual migration. Everything applied by one
 `autoMigrate()` run shares a batch number, and a revert undoes the most recent batch as a group.
 
-Both original migrations are batch 1 because they were applied together. This one is batch 2
-because it ran on its own. Add three migrations at once and all three share a batch — reverting
-then undoes all three, which is usually what you want and occasionally a surprise.
+Both original migrations are batch 1 because they were applied together. This one is batch 2 because
+it ran on its own. Add three migrations at once and all three share a batch, and reverting then
+undoes all three, which is usually what you want and occasionally a surprise.
 
 # Revert is already tested
 
 There is no separate test for `revert`, and there does not need to be:
-`TestHelpers.withApplication` calls `autoRevert()` after every test, which reverts every migration
-in reverse order. The suite exercises `AddEmployeeNameUniqueness.revert` fourteen times per run. A
+`TestHelpers.withApplication` calls `autoRevert()` after every test, which reverts every migration in
+reverse order. The suite therefore exercises `AddEmployeeNameUniqueness.revert` once per test. A
 wrong `revert` fails the suite immediately rather than lying dormant until the day you need it.
 
-This is a nice property to preserve — it is a direct consequence of the test harness rebuilding the
+This is a nice property to preserve. It is a direct consequence of the test harness rebuilding the
 schema per test, described in [`POSTGRES.md`](POSTGRES.md) step 6.
 
 ---
 
 # The constraint alone was not enough
 
-**Resolved the same day.** The sequence is worth keeping, because adding the constraint briefly
-made one thing *worse*.
+**Resolved the same day.** The sequence is worth keeping, because adding the constraint briefly made
+one thing *worse*.
 
 The constraint makes the database honest. It did not make the API honest. Both create handlers
-produce their `409` from a pre-check query, and nothing mapped a constraint violation to a
-response — each ended in `catch { throw error }`. So the losing side of a genuine race got a
-**500**: the database rejected the write correctly, and the client was told the wrong thing about
-why. `createDepartment` had that gap from the start; `AddEmployeeNameUniqueness` gave
-`createEmployee` the same one.
+produce their `409` from a pre-check query, and nothing mapped a constraint violation to a response,
+since each ended in `catch { throw error }`. So the losing side of a genuine race got a **500**. The
+database rejected the write correctly, and the client heard the wrong thing about why.
+`createDepartment` had that gap from the start; `AddEmployeeNameUniqueness` gave `createEmployee` the
+same one.
 
 The fix, applied to `createDepartment`, `updateDepartment` and `createEmployee`:
 
@@ -296,21 +297,21 @@ do {
 ```
 
 `FluentKit.DatabaseError` is a driver-agnostic protocol that `fluent-postgres-driver` conforms
-PostgreSQL's error types to, so no PostgreSQL import enters the handler. Why that works, and what
-the abstraction costs after Phase 2 adds a foreign key, is [`FLUENT.md`](FLUENT.md).
+PostgreSQL's error types to, so no PostgreSQL import enters the handler. Why that works, and what the
+abstraction costs after Phase 2 adds a foreign key, is [`FLUENT.md`](FLUENT.md).
 
-The pre-checks stay. They are now an optimisation giving a friendlier path in the common case,
-rather than the only thing between a client and a 500.
+The pre-checks stay. They are now an optimisation giving a friendlier path in the common case, rather
+than the only thing between a client and a 500.
 
 ## Forcing the race deterministically
 
 This technique is the reusable part, and the first attempt at it failed instructively.
 
-Firing 125 concurrent duplicate `POST`s produced 1×`201` and 24×`409` per round with zero `500`s —
+Firing 125 concurrent duplicate `POST`s produced 1×`201` and 24×`409` per round with zero `500`s,
 which looked like proof and was not. `pg_stat_database.xact_rollback` had not moved at all, meaning
 no insert ever reached the database and every conflict came from the pre-check. The HTTP client's
 process startup was slower than the race window. **A concurrency test whose requests never overlap
-reports success for the wrong reason** — the same trap as the routing `404` in
+reports success for the wrong reason**, the same trap as the routing `404` in
 [`TESTING.md`](TESTING.md) step 5, wearing a different costume.
 
 Transaction isolation makes it deterministic. An uncommitted `INSERT` is invisible to the handler's
@@ -335,23 +336,23 @@ commits, then fails with `23505`.
 | | Response | `xact_rollback` delta |
 | --- | --- | --- |
 | With the mapping | `409 Conflict` | 1 |
-| Without it (stashed, rebuilt) | `500 Internal Server Error` | — |
+| Without it (stashed, rebuilt) | `500 Internal Server Error` | not measured |
 
-Both directions confirmed — the second one matters as much as the first, per
-[`TESTING.md`](TESTING.md) step 5. And check the rollback delta, not just the status code: it is
+Both directions confirmed, and the second matters as much as the first, per
+[`TESTING.md`](TESTING.md) step 5. Check the rollback delta rather than just the status code. It is
 what proves the insert reached the database rather than the pre-check answering early.
 
-# Worked example: the foreign key, step 1 of 3
+# Worked example, the foreign key in three steps
 
 Giving every employee a department (#18, #20) is the first time this project has had to add a
-required column to a table that already holds rows. The sequence in *Not yet encountered* below —
-add nullable, backfill, then constrain — is now being followed rather than merely described, and it
-is split across three pull requests so each step can be proved before the next depends on it.
+required column to a table that already holds rows. The sequence in *Not yet encountered* below, add
+nullable then backfill then constrain, got followed here rather than merely described, split across
+three pull requests so each step could be proved before the next depended on it.
 
 **Step 1 adds the column nullable, with the foreign key already live.** That combination is what
 makes the step safe on its own: existing rows keep working because the column accepts null, and
-existing code keeps working because it never mentions the column — while referential integrity is
-enforced from the moment the migration runs.
+existing code keeps working because it never mentions the column, while referential integrity holds
+from the moment the migration runs.
 
 ```swift
 .field("department_id", .int32, .references(Models.Department.schema, "id", onDelete: .restrict))
@@ -359,9 +360,9 @@ enforced from the moment the migration runs.
 
 ## Proving it rather than trusting the schema
 
-`\d employees` shows the constraint exists. That is not the same as it being enforced — on the
-SQLite stack this project started with, it would have been recorded and silently ignored unless
-`PRAGMA foreign_keys = ON` was set per connection. So provoke it:
+`\d employees` shows the constraint exists. That is not the same as the database enforcing it. On the
+SQLite stack this project started with, SQLite would have recorded it and silently ignored it unless
+every connection set `PRAGMA foreign_keys = ON`. So provoke it:
 
 ```sql
 UPDATE employees SET department_id = 999 WHERE id = 1;
@@ -384,17 +385,17 @@ ERROR:  update or delete on table "departments" violates RESTRICT setting of for
 DETAIL:  Key (id)=(1) is referenced from table "employees".
 ```
 
-**The restrict behaviour is enforced by the database before any handler code exists.** The `409`
-that `deleteDepartment` will return is a nicer message for the same refusal, not the thing doing the
-refusing — which is the right way round, because a handler check alone would race.
+**The database enforces the restrict behaviour before any handler code exists.** The `409` that
+`deleteDepartment` returns is a nicer message for the same refusal rather than the thing doing the
+refusing, which is the right way round, because a handler check alone would race.
 
 ## Why bother with three steps here
 
-The development database holds a handful of throwaway rows, so nothing here would be lost by
-dropping the table and starting again. The sequence is followed anyway, because the technique is
-the thing worth having: a table you cannot truncate is the normal case everywhere except a learning
-project, and the shape of the fix — add nullable, backfill, constrain — is the same whether the
-table holds one row or a million.
+The development database holds a handful of throwaway rows, so nothing here would be lost by dropping
+the table and starting again. The sequence is followed anyway, because the technique is the thing
+worth having. A table you cannot truncate is the normal case everywhere except a learning project,
+and the shape of the fix, add nullable then backfill then constrain, is the same whether the table
+holds one row or a million.
 
 What genuinely differs at scale is locking, which is covered in *Not yet encountered* below.
 
@@ -402,13 +403,13 @@ What genuinely differs at scale is locking, which is covered in *Not yet encount
 
 Landed 2026-08-17 with the rest of #18.
 
-**Step 2, `BackfillEmployeeDepartment`,** gives every department-less row a department, because
-step 3 cannot apply `NOT NULL` while any row holds null. It creates a department named
-`Unassigned` if one is not already there and points the orphans at it. Inventing a placeholder is a
-decision, not a formality: the alternative is refusing to migrate until a human assigns each row,
-which protects the data and is useless for a project whose migrations run unattended at startup.
-The placeholder is visible through the API rather than hidden, so the rows still needing attention
-can be found by asking for them.
+**Step 2, `BackfillEmployeeDepartment`,** gives every department-less row a department, because step
+3 cannot apply `NOT NULL` while any row holds null. It creates a department named `Unassigned` if one
+is not already there and points the orphans at it. Inventing a placeholder is a decision, not a
+formality: the alternative is refusing to migrate until a human assigns each row, which protects the
+data and is useless for a project whose migrations run unattended at startup. The placeholder is
+visible through the API rather than hidden, so you can find the rows still needing attention by
+asking for them.
 
 **Step 3, `RequireEmployeeDepartment`, is the first migration here that drops out of Fluent
 entirely.** `DatabaseSchema.FieldUpdate` has exactly two cases, `.dataType` and `.custom`, so the
@@ -421,12 +422,12 @@ try await sql(database).raw(
 ).run()
 ```
 
-`SQLKit` arrives through `FluentPostgresDriver`'s re-exports, so this costs no new dependency — it
+`SQLKit` arrives through `FluentPostgresDriver`'s re-exports, so this costs no new dependency. It
 costs portability, which is why the cast to `SQLDatabase` throws rather than silently skipping.
 
-**Proved against populated data, which is the only place it means anything.** Every test reverts
-its migrations, so the suite runs this against an empty table where it cannot fail. The
-development database was seeded to look like a deployment that predates the column:
+**Proved against populated data, which is the only place it means anything.** Every test reverts its
+migrations, so the suite runs this against an empty table where it cannot fail. I seeded the
+development database to look like a deployment that predates the column:
 
 ```
  id | first_name | department_id        →         id | first_name | department_id | name
@@ -436,10 +437,10 @@ development database was seeded to look like a deployment that predates the colu
   3 | Alan       |                                 3 | Alan       |             2 | Unassigned
 ```
 
-Ada kept the department she had; Grace and Alan were placed in the migration-created `Unassigned`;
-`attnotnull` on `department_id` then read `t`. Had the backfill been omitted, step 3 would have
-failed at startup with `column "department_id" contains null values` — on the development server,
-not in CI, which is exactly the blind spot this section exists to describe.
+Ada kept the department she had, and the migration placed Grace and Alan in the `Unassigned` it
+created. `attnotnull` on `department_id` then read `t`. Without the backfill, step 3 would have
+failed at startup with `column "department_id" contains null values`, on the development server
+rather than in CI, which is exactly the blind spot this section exists to describe.
 
 # Not yet encountered
 
@@ -447,9 +448,9 @@ Things this project has not had to deal with, listed so they are not a surprise 
 
 | Situation | Why it is harder than it looks |
 | --- | --- |
-| **Adding a `NOT NULL` column to a populated table** | Every existing row needs a value. Usually three migrations: add nullable, backfill, then add the constraint |
-| **Long-held locks** | `ALTER TABLE ADD CONSTRAINT UNIQUE` takes an `ACCESS EXCLUSIVE` lock and builds the index while holding it. Fine on two rows; on a large table it blocks all reads and writes for the duration. PostgreSQL's answer is `CREATE UNIQUE INDEX CONCURRENTLY`, which Fluent's schema builder does not expose — reach for raw SQL via `SQLDatabase` when it matters |
-| **Data migrations** | Migrations that move or transform rows rather than change shape. `prepare` can run queries, not just schema changes — and a `revert` that genuinely restores the old data is often impossible, which is worth admitting in the code rather than faking |
+| ~~**Adding a `NOT NULL` column to a populated table**~~ **Done in #18.** | Every existing row needs a value. Usually three migrations: add nullable, backfill, then add the constraint. The worked example above is this case |
+| **Long-held locks** | `ALTER TABLE ADD CONSTRAINT UNIQUE` takes an `ACCESS EXCLUSIVE` lock and builds the index while holding it. Fine on two rows; on a large table it blocks all reads and writes for the duration. PostgreSQL's answer is `CREATE UNIQUE INDEX CONCURRENTLY`, which Fluent's schema builder does not expose. Reach for raw SQL via `SQLDatabase` when it matters |
+| **Data migrations** | Migrations that move or transform rows rather than change shape. `prepare` can run queries, not just schema changes. And a `revert` that genuinely restores the old data is often impossible, which is worth admitting in the code rather than faking |
 | **Renaming a column** | Fluent has `updateField`, but a rename is a breaking change for anything reading the old name. Usually staged: add, dual-write, backfill, drop |
 | **Migrating on deploy** | `autoMigrate()` runs at startup here. With more than one instance starting at once, they race. Production systems usually run migrations as a separate step before the new version starts |
 
@@ -462,4 +463,4 @@ Things this project has not had to deal with, listed so they are not a surprise 
 - [ ] Queried for data that would violate the new constraint, before running it.
 - [ ] Ran it, then read the schema back to confirm it did what you meant.
 - [ ] Provoked the new constraint to confirm it is enforced.
-- [ ] `swift test` passes — which also exercises `revert`.
+- [ ] `swift test` passes, which also exercises `revert`.

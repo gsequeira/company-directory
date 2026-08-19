@@ -217,6 +217,21 @@ The database *name* is not here because it is deliberately not overridable. `com
 is hardcoded in `TestHelpers`, so a misconfiguration fails to connect rather than reaching a database
 whose tables `autoRevert()` would then drop.
 
+```yaml
+- name: Measure the build products
+  if: always()
+  continue-on-error: true
+```
+
+The last step prints `du -sh` for `.build` and the SwiftPM cache directory, then writes the same
+lines to the job summary. It is a measurement rather than a check, and it carries both guards
+deliberately: `if: always()` so a failing test run still reports the figure, and `continue-on-error`
+so nothing about a `du` can turn a green build red.
+
+It exists because #30 cannot be decided without the Linux number.
+[`BUILD-CACHE.md`](BUILD-CACHE.md) → *Part 6, how to verify it worked* has the arithmetic that turns
+it into a yes or no.
+
 ---
 
 # Part 4, what can go wrong
@@ -330,7 +345,7 @@ Nothing here handles secrets yet, and that is worth preserving deliberately.
 | Item | Why | Status |
 | --- | --- | --- |
 | Branch protection requiring the check | Turns a report into a gate. The single highest-value follow-up | Issue #28, blocked on the plan rather than the effort |
-| `.build` caching keyed on toolchain version | 682s of every run is cold compile | Issue #30. The design, and the four ways the obvious version of it goes wrong, are in [`BUILD-CACHE.md`](BUILD-CACHE.md) |
+| `.build` caching keyed on toolchain version | 682s of every run is cold compile | Issue #30. The design, and the four ways the obvious version of it goes wrong, are in [`BUILD-CACHE.md`](BUILD-CACHE.md). The *Measure the build products* step reports the size the decision turns on |
 | `--warnings-as-errors` | Would currently fail on the unused-result warning in `TestHelpers.swift:47` | Issue #37 |
 
 The `swift format lint --strict` step landed with #6 and runs before the tests. See *Part 3, anatomy

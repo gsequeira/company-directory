@@ -268,10 +268,28 @@ try await database.transaction { db in
 ```
 
 The closure hands you a `db`, and **every query inside must use it**. Writing `query(on: database)`,
-the captured outer property, compiles, runs, and silently executes outside the transaction. The
-result is a transaction wrapping nothing, with no warning of any kind.
+the captured outer property, compiles and runs, and the transaction ends up wrapping nothing.
 
-This is the most common Fluent transaction bug and it is invisible until you test the rollback path.
+### What that actually does here, measured 2026-08-19
+
+The usual description of this bug, including the one this section carried until #66 was built, is
+that the stray query executes outside the transaction silently. That is not what happens in this
+project, and the reason is the connection pool.
+
+`FluentPostgresConfiguration` defaults `maxConnectionsPerEventLoop` to `1`, and nothing here
+overrides it. The transaction holds that one connection for its whole duration, so a query on the
+outer `database` has none to take. It waits, and the request dies about ten seconds later:
+
+```
+Server error - cause description: 'User handler threw an error.',
+underlying error: connectionRequestTimeout, operationID: transferEmployees
+```
+
+So the mistake presents as a hang followed by a `500`, not as quietly wrong data. It only becomes
+silent on a pool with room for a second connection, which is the configuration most write-ups
+assume.
+
+Both failure modes are caught by the same test, and neither is caught by a happy path.
 
 ### Testing the rollback, which is the actual exercise
 
@@ -288,6 +306,21 @@ split across two departments with nothing recording it.
 
 The alternative is a test-only injected throw. Same lesson, less elegant. Prefer the constraint
 violation, because the failure is real rather than simulated.
+
+### Step 1 does not survive contact, corrected 2026-08-19 in #66
+
+"A deliberate filter bug" means editing the handler to be wrong, which a test suite cannot do. And
+with this schema no *correct* transfer can leave the delete failing: the update moves every employee
+out of the source, and nothing else references a department. The failure exists only in the window
+between the two writes, which no client can aim at.
+
+What was built instead keeps the real constraint violation and gives the test a way to reach that
+window. `APIHandler` carries a `beforeSourceDelete` closure, `nil` in production and supplied by one
+test, invoked between the move and the delete. The test's closure assigns an employee to the source
+department **on a different connection** and commits, so the `.restrict` foreign key refuses the
+delete for exactly the reason a client would hit by losing that race.
+
+The assertion is still step 3, and still the point: nobody moved.
 
 ### An aside worth noticing
 

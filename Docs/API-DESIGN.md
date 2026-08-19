@@ -32,8 +32,13 @@ below argues should happen before Phase 2. This document is about what the API *
 **They are related as of 2026-08-17 (#18).** `Models.Employee` has a non-optional `@Parent`, the
 `employees` table has a required `department_id` with `onDelete: .restrict`, and the `Employee`
 schema carries `departmentId`. Phase 2 is complete; §2.1 records where the implementation departed
-from the sketch. Phase 3 adds the transfer operation and Phase 4 employment status. Neither is built
-yet, and the Phase 4 decisions are recorded in §4.2 through §4.6.
+from the sketch.
+
+**Phase 3 shipped 2026-08-19 (#66).** `POST /departments/{departmentId}/transfer` moves every
+employee into another department and optionally deletes the source, both writes in one transaction.
+It is the first operation here that is not CRUD. §3.1 through §3.5 record the decisions and §3.3
+records where its status codes departed from the sketch. Phase 4 adds employment status and is not
+built yet; its decisions are recorded in §4.2 through §4.6.
 
 ---
 
@@ -461,8 +466,10 @@ and how `.with(\.$employees)` eager loading works.
 optionally deletes the source. It is the first operation here that is not CRUD and the first that
 needs a transaction: two writes that must both land, or neither.
 
-The four decisions on #65 are recorded below as §3.1 to §3.4, with §3.5 covering three questions #65
-did not ask. The implementation is #66.
+**Implemented 2026-08-19 (#66).** The four decisions on #65 are recorded below as §3.1 to §3.4, with
+§3.5 covering three questions #65 did not ask. Everything below describes what was built, with one
+addition: the rollback test needed a seam that §3.1's decision did not anticipate, recorded at the
+end of §3.1.
 
 [`LEARNING-PATH.md`](LEARNING-PATH.md) → *Phase 3, the operation that forces a transaction* holds the
 reasoning and the spec sketch. Two status codes in that sketch are overruled by §3.3.
@@ -502,6 +509,23 @@ Fluent reports no affected-row count. #66 therefore has three shapes available:
 **#66 takes the first.** It is the only option that is both exact and expressible in Fluent, and the
 rule it teaches is that the count has to be of the rows that moved rather than a separate count that
 can drift from them.
+
+### The seam this decision needed, added 2026-08-19
+
+Deciding that the response carries a count made the rollback test necessary, and the rollback test
+turned out to have nowhere to stand. No *correct* transfer can leave the delete failing, because the
+update moves every employee out of the source and nothing else references a department. The failure
+lives only in the window between the two writes.
+
+`APIHandler` therefore carries `beforeSourceDelete`, a closure that is `nil` in production and
+supplied by one test, invoked between the move and the delete. The test's closure assigns an employee
+to the source on a different connection and commits, so the `.restrict` foreign key refuses the
+delete for exactly the reason §3.2 describes a client hitting.
+
+It is threaded as an explicit parameter through `configureServer` rather than held in a mutable
+global, so the coupling is visible in the signatures rather than hidden. A test-only parameter in
+production code is a real cost, accepted because the alternative is a transaction whose only
+guarantee is that somebody read the code carefully.
 
 ## 3.2 Decision, does `deleteSourceAfterTransfer` belong on the operation
 

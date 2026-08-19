@@ -107,6 +107,11 @@ gh issue develop 18 --checkout --name 18-department-employee-relationship
 branch to the issue, the PR and the commit without anyone having to remember what "the FK work"
 referred to.
 
+Two documentation branches departed from it, `docs/unslop-documentation` on #73 and
+`docs/phase-3-decisions` on #65. Recorded here rather than adopted. A topic prefix reads well and
+drops the one property the convention exists for, and documentation work is not a category that
+needs its own naming scheme.
+
 Suggested short names where the derived one is too long:
 
 | Issue | Branch |
@@ -414,7 +419,11 @@ when the exact text does not carry the point.
 
 Before opening the pull request:
 
-- [ ] Branch named `<issue-number>-<slug>`, created with `gh issue develop` so it is linked.
+- [ ] Branch named `<issue-number>-<slug>`. Create it with `gh issue develop` when this pull request
+      finishes the issue, so the branch is linked. Create it with `git switch -c` when it does not,
+      or when the pull request closes more than one issue, since a linked branch closes its issue on
+      merge whatever the body says. See *The linked branch closes the issue, whatever the pull
+      request says*.
 - [ ] `docker compose up -d --wait`, since the suite needs `db-test`.
 - [ ] `swift build` clean. Warnings count.
 - [ ] `swift test`, with every test passing and the count higher than before if the issue added any.

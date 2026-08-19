@@ -103,3 +103,28 @@ jobs:
 
       - name: Run tests
         run: swift test
+
+      # Measurement for #30, not a gate. Docs/BUILD-CACHE.md Part 6 turns these numbers into a
+      # decision: the repository cache quota is 10 GB shared across every branch, and the design
+      # needs room for the newest `main` entry plus an ancestor or two, so the test is roughly
+      # three times the `.build` figure against 10 GB. Under about 3 GB is comfortable; well
+      # above it, #30 closes as won't-fix rather than shipping a cache that evicts itself.
+      #
+      # The Linux number is the only one that predicts the cache size. The local macOS `.build`
+      # is 5.6 GB, of which 2.7 GB is `index-build` written by SourceKit-LSP, which CI never
+      # creates, and the object files are a different architecture besides.
+      #
+      # `if: always()` so a failing test run still reports it, and `continue-on-error` so a
+      # measurement can never turn a green build red.
+      - name: Measure the build products
+        if: always()
+        continue-on-error: true
+        run: |
+          {
+            echo '### Build product sizes'
+            echo '```'
+            du -sh .build ~/.cache/org.swift.swiftpm 2>&1 || true
+            echo '---'
+            du -sh .build/* 2>&1 | sort -h || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

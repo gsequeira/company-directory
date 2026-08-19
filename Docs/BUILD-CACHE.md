@@ -277,8 +277,22 @@ are separate levers and this is the free one.
 
 # Part 6, how to verify it worked
 
-Measure before implementing. The recipe is the one already in `CI.md` → *Reproducing a CI failure
-locally*, which conveniently writes Linux build products to a known scratch path:
+Measure before implementing. **CI now reports the number on every run**, in the *Measure the build
+products* step and in the job summary, so the figure this decision turns on arrives without anyone
+running anything:
+
+```
+### Build product sizes
+N.NG    .build
+NNNM    /root/.cache/org.swift.swiftpm
+```
+
+The step is guarded with `if: always()` and `continue-on-error`, so it reports on a red run and can
+never cause one. `CI.md` → *Part 3, anatomy of the workflow* has the reasoning.
+
+The local equivalent, for anyone who wants the breakdown without waiting for a run, is the recipe
+already in `CI.md` → *Reproducing a CI failure locally*, which conveniently writes Linux build
+products to a known scratch path:
 
 ```bash
 docker compose up -d --wait db-test

@@ -10,15 +10,18 @@ import Vapor
 ///
 /// - Parameter databaseConfiguration: Passed through to `configureDatabase(application:)`.
 ///   Defaults to the environment-derived configuration; the test suite supplies its own.
+/// - Parameter beforeSourceDelete: Passed through to `APIHandler`. `nil` in production, and set by
+///   exactly one test. See the property's own documentation for why the seam exists at all.
 func configureServer(
     _ application: Application,
-    databaseConfiguration: DatabaseConfigurationFactory? = nil
+    databaseConfiguration: DatabaseConfigurationFactory? = nil,
+    beforeSourceDelete: (@Sendable () async throws -> Void)? = nil
 ) async throws -> Service {
     try await configureDatabase(application: application, configuration: databaseConfiguration)
 
     routes(application)
 
-    let handler = APIHandler(database: application.db)
+    let handler = APIHandler(database: application.db, beforeSourceDelete: beforeSourceDelete)
 
     // Registers every operation declared in openapi.yaml onto the Vapor router.
     let transport = VaporTransport(routesBuilder: application)

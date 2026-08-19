@@ -114,6 +114,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictError"
+  /departments/{departmentId}/transfer:
+    parameters:
+      - $ref: "#/components/parameters/path.departmentId"
+    post:
+      summary: Transfer all employees to another department
+      description: Moves every employee out of this department into another, and optionally
+        deletes this one once it is empty. Both writes share a transaction.
+      operationId: transferEmployees
+      tags:
+        - departments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferEmployeesRequest"
+      responses:
+        "200":
+          description: The transfer completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransferResult"
+        "404":
+          description: No department exists with the specified ID.
+        "409":
+          description: The source department could not be deleted, because an employee was
+            assigned to it while the transfer was running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictError"
+        "422":
+          description: The target department does not exist, or is the source department.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferenceError"
   /employees:
     get:
       summary: List employees
@@ -274,6 +312,39 @@ components:
         name:
           description: The updated name for the department.
           type: string
+    TransferEmployeesRequest:
+      description: The payload required to transfer every employee out of a department.
+      properties:
+        targetDepartmentId:
+          description: The department to move every employee into. Must already exist, and must
+            not be the source department.
+          type: integer
+          format: int32
+          example: 2
+        deleteSourceAfterTransfer:
+          description: Whether to delete the source department once it is empty. The delete shares
+            a transaction with the move, so both land or neither does. Defaults to false.
+          type: boolean
+          example: true
+      required:
+        - targetDepartmentId
+    TransferResult:
+      description: What a transfer actually did. This is an operation rather than a resource, so
+        the response summarizes the work instead of returning a department.
+      properties:
+        transferred:
+          description: How many employees moved. Zero is a success, not an error, and means the
+            source department was already empty.
+          type: integer
+          example: 12
+        sourceDeleted:
+          description: Whether the source department was deleted. False when
+            deleteSourceAfterTransfer was absent or false.
+          type: boolean
+          example: true
+      required:
+        - transferred
+        - sourceDeleted
     Employee:
       description: Represents an employee within the organization.
       properties:

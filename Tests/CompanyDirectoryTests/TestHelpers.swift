@@ -30,6 +30,11 @@ struct TestHelpers {
     /// with a spare connection, `query(on: database)` inside a transaction closure really does
     /// execute outside it, silently. So the rollback test detects that mistake by asserting on the
     /// data rather than by timing out, which is the assertion worth having.
+    ///
+    /// Production caught up in #83 and now derives its own figure, never below two, in
+    /// `ConnectionPool`. This one stays hardcoded at 2 because the suite's requirement is exactly
+    /// the floor and does not vary with the machine. `Docs/FLUENT.md` → *A transaction closure may
+    /// not reach for anything outside itself* is the rule both settings exist to support.
     private static func databaseConfiguration() -> DatabaseConfigurationFactory {
         .postgres(
             configuration: .init(

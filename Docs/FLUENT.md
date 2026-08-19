@@ -205,6 +205,42 @@ The conversions are initializers on the **schema** type rather than a `toSchema(
 model, so the dependency points from the generated API layer at the domain model and never back.
 Regenerating the spec cannot ripple into `Models.swift`.
 
+## A transaction closure may not reach for anything outside itself
+
+`database.transaction { db in … }` hands you a `db`. **Every query inside the closure must use it**,
+and that is a rule about the connection pool rather than about style.
+
+```swift
+try await database.transaction { db in
+    try await Models.Employee.query(on: db).filter(…).all()       // correct
+    try await Models.Employee.query(on: database).filter(…).all() // deadlocks or silently escapes
+}
+```
+
+The transaction holds one connection for its whole duration. A query on the captured outer
+`database` asks the pool for a second one. What happens next depends entirely on how many
+connections that pool has:
+
+| Connections per event loop | What the wrong spelling does |
+| --- | --- |
+| 1 | Waits for the connection the transaction is holding, then fails with `connectionRequestTimeout` |
+| 2 or more | Succeeds, outside the transaction, silently. The transaction wraps nothing |
+
+Both are defects and only the second matches the way this mistake is usually described. Which one
+you get is a property of the machine, since the pool is sized per event loop and Vapor starts one
+event loop per core. That is how a transfer test passed on a ten-core laptop and deadlocked on a
+two-core CI runner, which is what #83 was filed for.
+
+**The rule is stricter than "use `db` for your queries".** It also rules out a helper that closes
+over a `Database`, a lookup inside a `catch` within the closure, and anything lazily initialised
+that might open a connection. If it can touch the database and it did not receive `db`, it does not
+belong inside the closure.
+
+`ConnectionPool` in `Database.swift` sizes the pool so the floor is two per event loop, which makes
+the silent case the one this project gets. That is the better failure to have, because the rollback
+test catches it by asserting on data rather than by timing out, but it is a safety net rather than
+a fix. The rule is the fix.
+
 ## The N+1 problem, which Phase 2 walks straight into
 
 An ORM makes the expensive thing look identical to the cheap thing at the call site. That is its main
